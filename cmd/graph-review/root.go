@@ -11,5 +11,6 @@ func rootCmd() *cobra.Command {
 		Long: `graph-review performs automated code reviews using cooperating
 AI agents wired together as a graph.`,
 	}
+	cmd.AddCommand(reviewCmd())
 	return cmd
 }
