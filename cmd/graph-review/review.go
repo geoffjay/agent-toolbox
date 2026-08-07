@@ -4,24 +4,29 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
 	"google.golang.org/genai"
 
 	"github.com/geoffjay/graph-review/internal/agents"
 	"github.com/geoffjay/graph-review/internal/graph"
+	"github.com/geoffjay/graph-review/internal/tools"
 	"google.golang.org/adk/v2/runner"
 )
 
 func reviewCmd() *cobra.Command {
 	var (
-		modelName  string
-		apiKey      string
-		baseURL     string
-		sessionID   string
+		modelName           string
+		apiKey              string
+		baseURL             string
+		sessionID           string
+		repoPath            string
+		noTools             bool
 		// Per-agent instruction overrides.
 		triageInstruction   string
 		staticInstruction   string
@@ -41,7 +46,11 @@ report.
 The diff is read from the file given as an argument, or from stdin when
 the argument is "-" or omitted. The pipeline uses an OpenAI-compatible
 model configured via the flags below or the OPENAI_MODEL, OPENAI_API_KEY
-and OPENAI_BASE_URL environment variables.`,
+and OPENAI_BASE_URL environment variables.
+
+The reviewer agents can call repo-inspection tools (read_file,
+list_files, git_blame, git_log) rooted at --repo (default: working
+directory). Use --no-tools to disable them.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -54,17 +63,32 @@ and OPENAI_BASE_URL environment variables.`,
 				return fmt.Errorf("no diff input to review")
 			}
 
+		root, err := filepath.Abs(repoPath)
+		if err != nil {
+			return fmt.Errorf("resolve repo path: %w", err)
+		}
+		repoPath = root
+
 			m, err := agents.NewModel(ctx, agents.ModelConfig{
 				ModelName: modelName,
-				APIKey:     apiKey,
-				BaseURL:    baseURL,
+				APIKey:    apiKey,
+				BaseURL:   baseURL,
 			})
 			if err != nil {
 				return fmt.Errorf("build model: %w", err)
 			}
 
-			root, err := graph.New(ctx, graph.Config{
+			var reviewTools []tool.Tool
+			if !noTools {
+				reviewTools, err = tools.NewTools()
+				if err != nil {
+					return fmt.Errorf("build tools: %w", err)
+				}
+			}
+
+			agent, err := graph.New(ctx, graph.Config{
 				Model:               m,
+				Tools:               reviewTools,
 				TriageInstruction:   triageInstruction,
 				StaticInstruction:   staticInstruction,
 				SecurityInstruction: securityInstruction,
@@ -74,7 +98,7 @@ and OPENAI_BASE_URL environment variables.`,
 				return fmt.Errorf("build pipeline: %w", err)
 			}
 
-			r, err := runner.NewInMemory("graph-review", root)
+			r, err := runner.NewInMemory("graph-review", agent)
 			if err != nil {
 				return fmt.Errorf("build runner: %w", err)
 			}
@@ -93,7 +117,12 @@ and OPENAI_BASE_URL environment variables.`,
 
 			fmt.Fprintln(os.Stderr, "reviewing", len(diff), "bytes of diff with model", modelName)
 
-			for ev, err := range r.Run(ctx, userID, sessionID, msg, agentRunConfig()) {
+			runOpts := []runner.RunOption{
+				runner.WithStateDelta(map[string]any{
+					tools.RepoPathStateKey: repoPath,
+				}),
+			}
+			for ev, err := range r.Run(ctx, userID, sessionID, msg, agentRunConfig(), runOpts...) {
 				if err != nil {
 					return err
 				}
@@ -115,6 +144,8 @@ and OPENAI_BASE_URL environment variables.`,
 	cmd.Flags().StringVar(&apiKey, "api-key", "", "API key for the model endpoint (env OPENAI_API_KEY)")
 	cmd.Flags().StringVar(&baseURL, "base-url", "", "OpenAI-compatible base URL (env OPENAI_BASE_URL)")
 	cmd.Flags().StringVar(&sessionID, "session", "", "Session ID for the runner (random by default)")
+	cmd.Flags().StringVar(&repoPath, "repo", ".", "Repository root the review tools operate in")
+	cmd.Flags().BoolVar(&noTools, "no-tools", false, "Disable repo-inspection tools on the reviewer agents")
 	cmd.Flags().StringVar(&triageInstruction, "triage-instruction", "", "Override the triage agent instruction")
 	cmd.Flags().StringVar(&staticInstruction, "static-instruction", "", "Override the static analysis agent instruction")
 	cmd.Flags().StringVar(&securityInstruction, "security-instruction", "", "Override the security agent instruction")

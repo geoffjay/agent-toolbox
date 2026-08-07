@@ -4,6 +4,7 @@ import (
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/agent/llmagent"
 	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/tool"
 )
 
 // StaticAgentName is the workflow node and agent name for the static
@@ -32,8 +33,10 @@ description. If you find nothing worth flagging, say so in one line.
 
 Keep your review under 300 words unless the diff is large.`
 
-// NewStaticAgent builds the static analysis LLM agent.
-func NewStaticAgent(m model.LLM, instruction string) (agent.Agent, error) {
+// NewStaticAgent builds the static analysis LLM agent. The supplied tools
+// let it inspect surrounding code (e.g. read_file, list_files, git_blame)
+// when it needs context beyond the diff hunks.
+func NewStaticAgent(m model.LLM, instruction string, tools []tool.Tool) (agent.Agent, error) {
 	if instruction == "" {
 		instruction = DefaultStaticInstruction
 	}
@@ -44,5 +47,6 @@ func NewStaticAgent(m model.LLM, instruction string) (agent.Agent, error) {
 		Mode:        llmagent.ModeSingleTurn,
 		Instruction: instruction,
 		OutputKey:   "static_findings",
+		Tools:       tools,
 	})
 }

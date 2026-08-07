@@ -20,6 +20,7 @@ import (
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/agent/workflowagent"
 	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/workflow"
 
 	"github.com/geoffjay/graph-review/internal/agents"
@@ -30,10 +31,16 @@ import (
 type Config struct {
 	Model model.LLM
 
+	// Tools available to the reviewer agents (static and security).
+	// When nil, the reviewers run without tools. The triage and summary
+	// agents never receive tools — triage only classifies and summary
+	// only aggregates reviewer output.
+	Tools []tool.Tool
+
 	// Optional instruction overrides, one per agent. When empty the
 	// corresponding DefaultXxxInstruction from the agents package is used.
-	TriageInstruction   string
-	StaticInstruction   string
+	TriageInstruction    string
+	StaticInstruction    string
 	SecurityInstruction  string
 	SummaryInstruction   string
 }
@@ -49,11 +56,11 @@ func New(_ context.Context, cfg Config) (agent.Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("build triage agent: %w", err)
 	}
-	static, err := agents.NewStaticAgent(cfg.Model, cfg.StaticInstruction)
+	static, err := agents.NewStaticAgent(cfg.Model, cfg.StaticInstruction, cfg.Tools)
 	if err != nil {
 		return nil, fmt.Errorf("build static agent: %w", err)
 	}
-	security, err := agents.NewSecurityAgent(cfg.Model, cfg.SecurityInstruction)
+	security, err := agents.NewSecurityAgent(cfg.Model, cfg.SecurityInstruction, cfg.Tools)
 	if err != nil {
 		return nil, fmt.Errorf("build security agent: %w", err)
 	}
