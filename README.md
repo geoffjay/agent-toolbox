@@ -45,6 +45,7 @@ available:
 ```sh
 git diff | graph-review review diff -m <model>
 graph-review review diff changes.patch --base-url http://localhost:11434/v1 -m llama3.1:latest
+graph-review review diff changes.patch --provider anthropic -m claude-sonnet-4-20250514
 ```
 
 The diff is read from a file argument or stdin. The reviewer tools are
@@ -77,15 +78,38 @@ requests/hour.
 
 ### Model configuration
 
-All subcommands share the OpenAI-compatible model flags:
+All subcommands share the model flags:
 
-- `-m / --model` — model name (env `OPENAI_MODEL`)
-- `--api-key` — API key (env `OPENAI_API_KEY`)
-- `--base-url` — OpenAI-compatible endpoint (env `OPENAI_BASE_URL`)
+- `--provider` — model provider: `openai` or `anthropic` (auto-detected from env)
+- `-m / --model` — model name (env `OPENAI_MODEL` or `ANTHROPIC_MODEL`)
+- `--api-key` — API key (env `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`)
+- `--base-url` — endpoint URL (env `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL`)
 
-This works with OpenAI directly, with local runtimes like
-[Ollama](https://ollama.com) (`--base-url http://localhost:11434/v1`),
-or any other OpenAI-compatible endpoint.
+#### OpenAI-compatible providers
+
+The default `openai` provider works with OpenAI directly, with local
+runtimes like [Ollama](https://ollama.com)
+(`--base-url http://localhost:11434/v1`), or any other OpenAI-compatible
+endpoint.
+
+```sh
+git diff | graph-review review diff -m gpt-4o-mini
+graph-review review diff changes.patch --base-url http://localhost:11434/v1 -m llama3.1:latest
+```
+
+#### Anthropic (Claude)
+
+The `anthropic` provider talks directly to Anthropic's native Messages
+API, supporting Claude models without a translating proxy:
+
+```sh
+export ANTHROPIC_API_KEY=<key>
+graph-review review diff -m claude-sonnet-4-20250514 --provider anthropic
+```
+
+The provider is auto-detected: if `ANTHROPIC_API_KEY` is set and
+`OPENAI_API_KEY` is not, `anthropic` is used by default. Set
+`--provider` explicitly to override.
 
 ## Status
 
