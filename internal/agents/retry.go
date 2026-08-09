@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"google.golang.org/adk/v2/model"
+	"google.golang.org/genai"
 )
 
 const (
@@ -60,7 +61,16 @@ func (r *retryModel) GenerateContent(ctx context.Context, req *model.LLMRequest,
 				return
 			}
 			if !isTransientError(lastErr) || attempt == r.maxRetries {
-				yield(nil, lastErr)
+				yield(&model.LLMResponse{
+					Content: &genai.Content{
+						Role:  "model",
+						Parts: []*genai.Part{{Text: ""}},
+					},
+					ErrorCode:     "transient_error_exhausted",
+					ErrorMessage:  lastErr.Error(),
+					FinishReason:  genai.FinishReasonStop,
+					TurnComplete:  true,
+				}, nil)
 				return
 			}
 			select {

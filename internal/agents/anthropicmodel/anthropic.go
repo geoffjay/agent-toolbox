@@ -192,8 +192,8 @@ func validateBaseURL(base string) error {
 	if err != nil {
 		return fmt.Errorf("anthropic: invalid base URL: %w", err)
 	}
-	if u.Scheme != "https" && u.Scheme != "http" {
-		return fmt.Errorf("anthropic: base URL must use http or https scheme, got %q", u.Scheme)
+	if u.Scheme != "https" {
+		return fmt.Errorf("anthropic: base URL must use https scheme, got %q", u.Scheme)
 	}
 	return nil
 }

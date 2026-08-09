@@ -53,12 +53,13 @@ func NewModel(ctx context.Context, cfg ModelConfig) (model.LLM, error) {
 	if provider == "" {
 		provider = defaultProvider()
 	}
-
 	switch provider {
+	case ProviderOpenAI:
+		return newOpenAIModel(ctx, cfg)
 	case ProviderAnthropic:
 		return newAnthropicModel(ctx, cfg)
 	default:
-		return newOpenAIModel(ctx, cfg)
+		return nil, fmt.Errorf("unknown provider %q: must be %q or %q", provider, ProviderOpenAI, ProviderAnthropic)
 	}
 }
 
