@@ -95,7 +95,7 @@ func newOpenAIModel(ctx context.Context, cfg ModelConfig) (model.LLM, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create openai model: %w", err)
 	}
-	return m, nil
+	return wrapWithRetry(m), nil
 }
 
 func newAnthropicModel(ctx context.Context, cfg ModelConfig) (model.LLM, error) {
@@ -124,5 +124,5 @@ func newAnthropicModel(ctx context.Context, cfg ModelConfig) (model.LLM, error) 
 	if err != nil {
 		return nil, fmt.Errorf("create anthropic model: %w", err)
 	}
-	return m, nil
+	return wrapWithRetry(m), nil
 }

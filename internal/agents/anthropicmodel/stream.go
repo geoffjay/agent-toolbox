@@ -2,12 +2,17 @@ package anthropicmodel
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"google.golang.org/genai"
 )
+
+const maxToolInputBytes = 1 << 20 // 1 MiB
+
+var ErrToolInputTooLarge = errors.New("anthropic: streamed tool input exceeds 1 MiB limit")
 
 // streamTranslator processes Anthropic streaming events and converts them
 // into genai.GenerateContentResponse chunks. It buffers tool-use input
@@ -60,6 +65,9 @@ func (t *streamTranslator) process(event anthropic.MessageStreamEventUnion) (*ge
 		case "input_json_delta":
 			if delta.Delta.PartialJSON != "" {
 				if buf, ok := t.toolInputs[idx]; ok {
+					if buf.Len()+len(delta.Delta.PartialJSON) > maxToolInputBytes {
+						return nil, ErrToolInputTooLarge
+					}
 					buf.WriteString(delta.Delta.PartialJSON)
 				}
 			}

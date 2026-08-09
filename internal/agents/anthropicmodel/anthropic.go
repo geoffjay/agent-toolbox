@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"iter"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -53,6 +54,9 @@ func NewModel(_ context.Context, modelName string, cfg *ClientConfig) (model.LLM
 		opts = append(opts, option.WithAPIKey(cfg.APIKey))
 	}
 	if cfg.BaseURL != "" {
+		if err := validateBaseURL(cfg.BaseURL); err != nil {
+			return nil, err
+		}
 		opts = append(opts, option.WithBaseURL(cfg.BaseURL))
 	}
 	if cfg.HTTPClient != nil {
@@ -181,6 +185,17 @@ func singleErrorSequence(err error) iter.Seq2[*model.LLMResponse, error] {
 	return func(yield func(*model.LLMResponse, error) bool) {
 		yield(nil, err)
 	}
+}
+
+func validateBaseURL(base string) error {
+	u, err := url.Parse(base)
+	if err != nil {
+		return fmt.Errorf("anthropic: invalid base URL: %w", err)
+	}
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return fmt.Errorf("anthropic: base URL must use http or https scheme, got %q", u.Scheme)
+	}
+	return nil
 }
 
 // Errors returned by the provider.
