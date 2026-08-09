@@ -24,7 +24,7 @@ manages the control flow, tool dispatch, and state transitions between
 nodes.
 
 ```mermaid
-graph TD
+flowchart TD
     START([START]) --> triage
     triage["Triage Agent<br/>(LLM)"] --> route{"Route<br/>(classifies diff)"}
     route -- "static" --> static
