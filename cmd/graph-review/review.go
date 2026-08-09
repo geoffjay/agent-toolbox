@@ -20,9 +20,9 @@ import (
 	"google.golang.org/adk/v2/runner"
 )
 
-// modelFlags carries the OpenAI-compatible model options shared by every
-// review subcommand.
+// modelFlags carries the model options shared by every review subcommand.
 type modelFlags struct {
+	provider  string
 	modelName string
 	apiKey    string
 	baseURL   string
@@ -127,6 +127,7 @@ type runPipelineInput struct {
 // so the tools can read repo_path / pr_ref at runtime.
 func runPipeline(ctx context.Context, in runPipelineInput) error {
 	m, err := agents.NewModel(ctx, agents.ModelConfig{
+		Provider:  agents.Provider(in.provider),
 		ModelName: in.modelName,
 		APIKey:    in.apiKey,
 		BaseURL:   in.baseURL,
@@ -200,11 +201,12 @@ func runPipeline(ctx context.Context, in runPipelineInput) error {
 	return nil
 }
 
-// addModelFlags wires the OpenAI-compatible model flags onto a command.
+// addModelFlags wires the model flags onto a command.
 func addModelFlags(cmd *cobra.Command, mf *modelFlags) {
-	cmd.Flags().StringVarP(&mf.modelName, "model", "m", "", "OpenAI-compatible model name (env OPENAI_MODEL)")
-	cmd.Flags().StringVar(&mf.apiKey, "api-key", "", "API key for the model endpoint (env OPENAI_API_KEY)")
-	cmd.Flags().StringVar(&mf.baseURL, "base-url", "", "OpenAI-compatible base URL (env OPENAI_BASE_URL)")
+	cmd.Flags().StringVar(&mf.provider, "provider", "", "Model provider: openai or anthropic (env OPENAI_API_KEY/ANTHROPIC_API_KEY)")
+	cmd.Flags().StringVarP(&mf.modelName, "model", "m", "", "Model name (env OPENAI_MODEL or ANTHROPIC_MODEL)")
+	cmd.Flags().StringVar(&mf.apiKey, "api-key", "", "API key for the model endpoint (env OPENAI_API_KEY or ANTHROPIC_API_KEY)")
+	cmd.Flags().StringVar(&mf.baseURL, "base-url", "", "Base URL for the endpoint (env OPENAI_BASE_URL or ANTHROPIC_BASE_URL)")
 }
 
 // addPipelineFlags wires the shared pipeline flags onto a command.
