@@ -23,6 +23,27 @@ These agents are wired together as a graph using the ADK library, which
 manages the control flow, tool dispatch, and state transitions between
 nodes.
 
+```mermaid
+graph TD
+    START([START]) --> triage
+    triage["Triage Agent<br/>(LLM)"] --> route{"Route<br/>(classifies diff)"}
+    route -- "static" --> static
+    route -- "security" --> security
+    route -- "both" --> static
+    route -- "both" --> security
+    static["Static Agent<br/>(LLM + tools)"] --> gather
+    security["Security Agent<br/>(LLM + tools)"] --> gather
+    gather((Join)) --> format["Format Findings<br/>(function)"]
+    format --> summary["Summary Agent<br/>(LLM)"]
+    summary --> END([END])
+```
+
+The triage agent classifies the diff and emits one of `static`,
+`security`, or `both`. A `MultiRoute` edge lets the `both` category fan
+out to both reviewers with a single edge per target. A join node waits
+for all active reviewers to complete, then the findings are formatted and
+passed to the summary agent for a final report.
+
 The reviewer agents (static and security) can call repo-inspection tools
 to look beyond the diff hunks:
 
