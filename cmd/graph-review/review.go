@@ -16,6 +16,7 @@ import (
 
 	"github.com/geoffjay/graph-review/internal/agents"
 	"github.com/geoffjay/graph-review/internal/graph"
+	"github.com/geoffjay/graph-review/internal/rules"
 	"github.com/geoffjay/graph-review/internal/tools"
 	"google.golang.org/adk/v2/runner"
 )
@@ -31,11 +32,12 @@ type modelFlags struct {
 // pipelineFlags carries the pipeline-level options shared by every review
 // subcommand: per-agent instruction overrides and the no-tools toggle.
 type pipelineFlags struct {
-	triageInstruction    string
-	staticInstruction    string
-	securityInstruction  string
-	summaryInstruction   string
-	noTools              bool
+	triageInstruction   string
+	staticInstruction   string
+	securityInstruction string
+	summaryInstruction  string
+	noTools             bool
+	rulesDir            string
 }
 
 func reviewCmd() *cobra.Command {
@@ -99,6 +101,7 @@ at --repo (default: working directory). Use --no-tools to disable them.`,
 				sessionID:     sessionID,
 				state:         state,
 				label:         fmt.Sprintf("reviewing %d bytes of diff with model %s", len(diff), mf.modelName),
+				repoRoot:      absRepo,
 			})
 			return err
 		},
@@ -116,10 +119,11 @@ at --repo (default: working directory). Use --no-tools to disable them.`,
 type runPipelineInput struct {
 	modelFlags
 	pipelineFlags
-	diff       string
-	sessionID  string
-	state      map[string]any
-	label      string
+	diff      string
+	sessionID string
+	state     map[string]any
+	label     string
+	repoRoot  string
 }
 
 // runPipeline builds the model, tools, graph, and runner from the given
@@ -151,6 +155,11 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 		reviewTools = append(reviewTools, prTools...)
 	}
 
+	rulesDir := in.rulesDir
+	if rulesDir == "" && in.repoRoot != "" {
+		rulesDir = rules.FindRulesDir(in.repoRoot)
+	}
+
 	root, err := graph.New(ctx, graph.Config{
 		Model:               m,
 		Tools:               reviewTools,
@@ -158,6 +167,7 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 		StaticInstruction:   in.staticInstruction,
 		SecurityInstruction: in.securityInstruction,
 		SummaryInstruction:  in.summaryInstruction,
+		RulesDir:            rulesDir,
 	})
 	if err != nil {
 		return "", fmt.Errorf("build pipeline: %w", err)
@@ -205,7 +215,62 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 		}
 	}
 	fmt.Println()
-	return output.String(), nil
+
+	report := output.String()
+	if warnShallowReview(report, in.diff) {
+		fmt.Fprintln(os.Stderr, "\nWARNING: the review produced no findings for a non-trivial diff.")
+		fmt.Fprintln(os.Stderr, "This may indicate the model did not thoroughly analyze the code.")
+		fmt.Fprintln(os.Stderr, "Consider using a stronger model or reviewing manually.")
+	}
+	return report, nil
+}
+
+// warnShallowReview returns true if the report has no findings and the
+// diff is non-trivial (more than 10 changed lines, excluding file headers
+// and index lines).
+func warnShallowReview(report, diff string) bool {
+	if countDiffLines(diff) <= 10 {
+		return false
+	}
+	findings := extractFindingsSection(report)
+	if findings == "" {
+		return true
+	}
+	lower := strings.ToLower(findings)
+	return strings.Contains(lower, "no findings") ||
+		strings.Contains(lower, "none reported") ||
+		strings.Contains(lower, "no issues")
+}
+
+func countDiffLines(diff string) int {
+	count := 0
+	for _, line := range strings.Split(diff, "\n") {
+		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+			count++
+		} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+			count++
+		}
+	}
+	return count
+}
+
+func extractFindingsSection(report string) string {
+	lines := strings.Split(report, "\n")
+	var sb strings.Builder
+	capturing := false
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "## Findings" {
+			capturing = true
+			continue
+		}
+		if capturing {
+			if strings.HasPrefix(strings.TrimSpace(line), "## ") {
+				break
+			}
+			sb.WriteString(line + "\n")
+		}
+	}
+	return strings.TrimSpace(sb.String())
 }
 
 // addModelFlags wires the model flags onto a command.
@@ -219,6 +284,7 @@ func addModelFlags(cmd *cobra.Command, mf *modelFlags) {
 // addPipelineFlags wires the shared pipeline flags onto a command.
 func addPipelineFlags(cmd *cobra.Command, pf *pipelineFlags) {
 	cmd.Flags().BoolVar(&pf.noTools, "no-tools", false, "Disable repo-inspection and PR tools on the reviewer agents")
+	cmd.Flags().StringVar(&pf.rulesDir, "rules-dir", "", "Path to repository rules directory (default: .review/rules relative to repo root)")
 	cmd.Flags().StringVar(&pf.triageInstruction, "triage-instruction", "", "Override the triage agent instruction")
 	cmd.Flags().StringVar(&pf.staticInstruction, "static-instruction", "", "Override the static analysis agent instruction")
 	cmd.Flags().StringVar(&pf.securityInstruction, "security-instruction", "", "Override the security agent instruction")

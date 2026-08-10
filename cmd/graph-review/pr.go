@@ -107,6 +107,17 @@ local checkout.`,
 				state[tools.RepoPathStateKey] = abs
 			}
 
+			repoRoot := ""
+			if cloneRepo != "" {
+				repoRoot, _ = filepath.Abs(cloneRepo)
+			} else if !noClone {
+				if dir, ok := state[tools.RepoPathStateKey].(string); ok {
+					repoRoot = dir
+				}
+			} else {
+				repoRoot, _ = os.Getwd()
+			}
+
 			label := fmt.Sprintf("reviewing PR %s#%d (%d bytes) with model %s",
 				ref, number, len(diff), mf.modelName)
 			if pr.Title != "" {
@@ -121,6 +132,7 @@ local checkout.`,
 				sessionID:     sessionID,
 				state:         state,
 				label:         label,
+				repoRoot:      repoRoot,
 			})
 			if err != nil {
 				return err

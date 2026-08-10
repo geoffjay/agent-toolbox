@@ -90,7 +90,8 @@ func ParseFindings(report string) []Finding {
 // substantive findings section.
 func ExtractVerdict(report string) string {
 	findings := extractSection(report, "## Findings")
-	if findings == "" || strings.Contains(strings.ToLower(findings), "none reported") {
+	fl := strings.ToLower(findings)
+	if findings == "" || strings.Contains(fl, "none reported") || strings.Contains(fl, "no findings") {
 		return "COMMENT"
 	}
 	section := extractSection(report, "## Verdict")

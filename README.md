@@ -44,6 +44,44 @@ out to both reviewers with a single edge per target. A join node waits
 for all active reviewers to complete, then the findings are formatted and
 passed to the summary agent for a final report.
 
+## Repository rules
+
+Repository-specific review rules can be placed in `.review/rules/` as
+Markdown files with YAML frontmatter. Rules are loaded automatically from
+the repo root (or from the clone when reviewing a PR) and appended to
+matching agents' instructions.
+
+### Rule file format
+
+```markdown
+---
+title: "Require error wrapping"
+agents: ["static_analysis", "security"]
+severity: major
+priority: 10
+tags: ["go", "errors"]
+---
+
+All error returns must be wrapped with fmt.Errorf using %w to preserve
+the error chain.
+```
+
+### Frontmatter fields
+
+- `title` — human-readable rule name (default: filename)
+- `agents` — list of agent names to scope the rule to: `triage`,
+  `static_analysis`, `security`, `summary`, or `*` for all (required)
+- `severity` — `blocker`, `major`, `minor`, or `nit` (default: `minor`)
+- `priority` — numeric priority; higher = more important (default: `0`)
+- `enabled` — set to `false` to disable a rule without deleting it
+  (default: `true`)
+- `tags` — free-form tags for grouping
+
+Rules are sorted by priority (descending) then severity (blocker > major
+> minor > nit) and appended to the agent's system instruction as
+additional guidance. Use `--rules-dir` to override the default
+`.review/rules` location.
+
 The reviewer agents (static and security) can call repo-inspection tools
 to look beyond the diff hunks:
 

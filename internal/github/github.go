@@ -219,7 +219,9 @@ type PostReviewResponse struct {
 }
 
 // PostReview submits a PR review with inline comments. The event must be
-// one of "APPROVED", "REQUEST_CHANGES", or "COMMENT". A token is required.
+// one of "APPROVED", "REQUEST_CHANGES", or "COMMENT". If the API rejects
+// "APPROVED" or "REQUEST_CHANGES" (e.g. self-review), it retries as
+// "COMMENT". A token is required.
 func (c *Client) PostReview(ctx context.Context, ref RepoRef, number int, req *PostReviewRequest) (*PostReviewResponse, error) {
 	if c.token == "" {
 		return nil, ErrNoToken
@@ -227,6 +229,14 @@ func (c *Client) PostReview(ctx context.Context, ref RepoRef, number int, req *P
 	path := fmt.Sprintf("/repos/%s/pulls/%d/reviews", ref, number)
 	var resp PostReviewResponse
 	if err := c.postJSON(ctx, path, req, &resp); err != nil {
+		if req.Event != "COMMENT" {
+			fallback := *req
+			fallback.Event = "COMMENT"
+			var fbResp PostReviewResponse
+			if fbErr := c.postJSON(ctx, path, &fallback, &fbResp); fbErr == nil {
+				return &fbResp, nil
+			}
+		}
 		return nil, fmt.Errorf("post review %s#%d: %w", ref, number, err)
 	}
 	return &resp, nil

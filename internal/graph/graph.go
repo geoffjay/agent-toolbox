@@ -24,6 +24,7 @@ import (
 	"google.golang.org/adk/v2/workflow"
 
 	"github.com/geoffjay/graph-review/internal/agents"
+	"github.com/geoffjay/graph-review/internal/rules"
 )
 
 // Config holds the options for building the review graph. All LLM agents
@@ -39,10 +40,16 @@ type Config struct {
 
 	// Optional instruction overrides, one per agent. When empty the
 	// corresponding DefaultXxxInstruction from the agents package is used.
-	TriageInstruction    string
-	StaticInstruction    string
-	SecurityInstruction  string
-	SummaryInstruction   string
+	// Repository rules (if any) are appended after the base instruction.
+	TriageInstruction   string
+	StaticInstruction   string
+	SecurityInstruction string
+	SummaryInstruction  string
+
+	// RulesDir is the path to repository-specific rules (typically
+	// .review/rules). When set, rules matching each agent are appended
+	// to that agent's instruction. When empty, no rules are loaded.
+	RulesDir string
 }
 
 // New assembles the review pipeline as a workflow agent. The returned
@@ -52,19 +59,49 @@ func New(_ context.Context, cfg Config) (agent.Agent, error) {
 		return nil, fmt.Errorf("graph.Config.Model is required")
 	}
 
-	triage, err := agents.NewTriageAgent(cfg.Model, cfg.TriageInstruction)
+	triageInstr := cfg.TriageInstruction
+	staticInstr := cfg.StaticInstruction
+	securityInstr := cfg.SecurityInstruction
+	summaryInstr := cfg.SummaryInstruction
+
+	if cfg.RulesDir != "" {
+		loaded, err := rules.Load(cfg.RulesDir)
+		if err != nil {
+			return nil, fmt.Errorf("load rules: %w", err)
+		}
+		if len(loaded) > 0 {
+			triageInstr = rules.FormatInstruction(
+				defaultOr(triageInstr, agents.DefaultTriageInstruction),
+				rules.ForAgent(loaded, rules.AgentTriage),
+			)
+			staticInstr = rules.FormatInstruction(
+				defaultOr(staticInstr, agents.DefaultStaticInstruction),
+				rules.ForAgent(loaded, rules.AgentStatic),
+			)
+			securityInstr = rules.FormatInstruction(
+				defaultOr(securityInstr, agents.DefaultSecurityInstruction),
+				rules.ForAgent(loaded, rules.AgentSecurity),
+			)
+			summaryInstr = rules.FormatInstruction(
+				defaultOr(summaryInstr, agents.DefaultSummaryInstruction),
+				rules.ForAgent(loaded, rules.AgentSummary),
+			)
+		}
+	}
+
+	triage, err := agents.NewTriageAgent(cfg.Model, triageInstr)
 	if err != nil {
 		return nil, fmt.Errorf("build triage agent: %w", err)
 	}
-	static, err := agents.NewStaticAgent(cfg.Model, cfg.StaticInstruction, cfg.Tools)
+	static, err := agents.NewStaticAgent(cfg.Model, staticInstr, cfg.Tools)
 	if err != nil {
 		return nil, fmt.Errorf("build static agent: %w", err)
 	}
-	security, err := agents.NewSecurityAgent(cfg.Model, cfg.SecurityInstruction, cfg.Tools)
+	security, err := agents.NewSecurityAgent(cfg.Model, securityInstr, cfg.Tools)
 	if err != nil {
 		return nil, fmt.Errorf("build security agent: %w", err)
 	}
-	summary, err := agents.NewSummaryAgent(cfg.Model, cfg.SummaryInstruction)
+	summary, err := agents.NewSummaryAgent(cfg.Model, summaryInstr)
 	if err != nil {
 		return nil, fmt.Errorf("build summary agent: %w", err)
 	}
@@ -118,4 +155,11 @@ func New(_ context.Context, cfg Config) (agent.Agent, error) {
 		return nil, fmt.Errorf("build review pipeline: %w", err)
 	}
 	return root, nil
+}
+
+func defaultOr(val, def string) string {
+	if val != "" {
+		return val
+	}
+	return def
 }
