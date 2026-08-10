@@ -92,14 +92,15 @@ at --repo (default: working directory). Use --no-tools to disable them.`,
 			state := map[string]any{
 				tools.RepoPathStateKey: absRepo,
 			}
-			return runPipeline(ctx, runPipelineInput{
-				modelFlags:  mf,
+			_, err = runPipeline(ctx, runPipelineInput{
+				modelFlags:    mf,
 				pipelineFlags: pf,
-				diff:        diff,
-				sessionID:   sessionID,
-				state:       state,
-				label:       fmt.Sprintf("reviewing %d bytes of diff with model %s", len(diff), mf.modelName),
+				diff:          diff,
+				sessionID:     sessionID,
+				state:         state,
+				label:         fmt.Sprintf("reviewing %d bytes of diff with model %s", len(diff), mf.modelName),
 			})
+			return err
 		},
 	}
 
@@ -124,8 +125,9 @@ type runPipelineInput struct {
 // runPipeline builds the model, tools, graph, and runner from the given
 // input, sends the diff as a user message, and streams the agent output
 // to stdout. The state map is seeded into the runner via WithStateDelta
-// so the tools can read repo_path / pr_ref at runtime.
-func runPipeline(ctx context.Context, in runPipelineInput) error {
+// so the tools can read repo_path / pr_ref at runtime. It returns the
+// full text output of the pipeline (concatenated non-thought text parts).
+func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 	m, err := agents.NewModel(ctx, agents.ModelConfig{
 		Provider:  agents.Provider(in.provider),
 		ModelName: in.modelName,
@@ -133,18 +135,18 @@ func runPipeline(ctx context.Context, in runPipelineInput) error {
 		BaseURL:   in.baseURL,
 	})
 	if err != nil {
-		return fmt.Errorf("build model: %w", err)
+		return "", fmt.Errorf("build model: %w", err)
 	}
 
 	var reviewTools []tool.Tool
 	if !in.noTools {
 		reviewTools, err = tools.NewTools()
 		if err != nil {
-			return fmt.Errorf("build tools: %w", err)
+			return "", fmt.Errorf("build tools: %w", err)
 		}
 		prTools, err := tools.NewPRTools()
 		if err != nil {
-			return fmt.Errorf("build PR tools: %w", err)
+			return "", fmt.Errorf("build PR tools: %w", err)
 		}
 		reviewTools = append(reviewTools, prTools...)
 	}
@@ -158,12 +160,12 @@ func runPipeline(ctx context.Context, in runPipelineInput) error {
 		SummaryInstruction:  in.summaryInstruction,
 	})
 	if err != nil {
-		return fmt.Errorf("build pipeline: %w", err)
+		return "", fmt.Errorf("build pipeline: %w", err)
 	}
 
 	r, err := runner.NewInMemory("graph-review", root)
 	if err != nil {
-		return fmt.Errorf("build runner: %w", err)
+		return "", fmt.Errorf("build runner: %w", err)
 	}
 
 	userID := "graph-review-cli"
@@ -181,12 +183,14 @@ func runPipeline(ctx context.Context, in runPipelineInput) error {
 
 	fmt.Fprintln(os.Stderr, in.label)
 
+	var output strings.Builder
+
 	runOpts := []runner.RunOption{
 		runner.WithStateDelta(in.state),
 	}
 	for ev, err := range r.Run(ctx, userID, sessionID, msg, agentRunConfig(), runOpts...) {
 		if err != nil {
-			return err
+			return output.String(), err
 		}
 		if ev == nil || ev.Content == nil {
 			continue
@@ -194,11 +198,12 @@ func runPipeline(ctx context.Context, in runPipelineInput) error {
 		for _, part := range ev.Content.Parts {
 			if part.Text != "" && !part.Thought {
 				fmt.Print(part.Text)
+				output.WriteString(part.Text)
 			}
 		}
 	}
 	fmt.Println()
-	return nil
+	return output.String(), nil
 }
 
 // addModelFlags wires the model flags onto a command.
