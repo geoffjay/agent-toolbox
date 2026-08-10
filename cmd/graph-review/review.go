@@ -198,7 +198,9 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 		for _, part := range ev.Content.Parts {
 			if part.Text != "" && !part.Thought {
 				fmt.Print(part.Text)
-				output.WriteString(part.Text)
+				if ev.Author == agents.SummaryAgentName {
+					output.WriteString(part.Text)
+				}
 			}
 		}
 	}
