@@ -20,9 +20,11 @@
 package rules
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -32,11 +34,11 @@ import (
 // Agent name constants matching the agents package. Duplicated here to
 // avoid an import cycle (agents imports rules indirectly via graph).
 const (
-	AgentTriage  = "triage"
-	AgentStatic  = "static_analysis"
+	AgentTriage   = "triage"
+	AgentStatic   = "static_analysis"
 	AgentSecurity = "security"
-	AgentSummary = "summary"
-	AgentAll     = "*"
+	AgentSummary  = "summary"
+	AgentAll      = "*"
 )
 
 // Severity levels ordered from most to least important.
@@ -117,7 +119,7 @@ func walkDir(base string, entry os.DirEntry, rules *[]Rule) error {
 		}
 		return nil
 	}
-	if !strings.HasSuffix(entry.Name(), ".md") {
+	if !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
 		return nil
 	}
 	rule, err := loadRule(full)
@@ -128,6 +130,21 @@ func walkDir(base string, entry os.DirEntry, rules *[]Rule) error {
 		*rules = append(*rules, *rule)
 	}
 	return nil
+}
+
+var validAgents = map[string]bool{
+	AgentTriage:   true,
+	AgentStatic:   true,
+	AgentSecurity: true,
+	AgentSummary:  true,
+	AgentAll:      true,
+}
+
+var validSeverities = map[string]bool{
+	SeverityBlocker: true,
+	SeverityMajor:   true,
+	SeverityMinor:   true,
+	SeverityNit:     true,
 }
 
 func loadRule(path string) (*Rule, error) {
@@ -143,7 +160,9 @@ func loadRule(path string) (*Rule, error) {
 
 	rule := &Rule{File: path}
 	if fm != "" {
-		if err := yaml.Unmarshal([]byte(fm), &rule.Frontmatter); err != nil {
+		dec := yaml.NewDecoder(bytes.NewReader([]byte(fm)))
+		dec.KnownFields(true)
+		if err := dec.Decode(&rule.Frontmatter); err != nil {
 			return nil, fmt.Errorf("parse frontmatter: %w", err)
 		}
 	}
@@ -155,8 +174,16 @@ func loadRule(path string) (*Rule, error) {
 	if len(rule.Agents) == 0 {
 		return nil, fmt.Errorf("rule %q: frontmatter must specify at least one agent", path)
 	}
+	for _, a := range rule.Agents {
+		if !validAgents[a] {
+			return nil, fmt.Errorf("rule %q: unknown agent %q (valid: triage, static_analysis, security, summary, *)", path, a)
+		}
+	}
 	if rule.Severity == "" {
 		rule.Severity = SeverityMinor
+	}
+	if !validSeverities[rule.Severity] {
+		return nil, fmt.Errorf("rule %q: unknown severity %q (valid: blocker, major, minor, nit)", path, rule.Severity)
 	}
 	if rule.Title == "" {
 		rule.Title = filepath.Base(path)
@@ -165,31 +192,36 @@ func loadRule(path string) (*Rule, error) {
 	return rule, nil
 }
 
+var closeFrontmatterRe = regexp.MustCompile(`(?m)^---\s*$`)
+
 // splitFrontmatter separates YAML frontmatter from the Markdown body.
-// Frontmatter is delimited by --- at the start of the file.
+// Frontmatter is delimited by --- at the start of the file and a closing
+// --- on its own line. Returns empty frontmatter if no frontmatter is
+// present.
 func splitFrontmatter(content string) (frontmatter, body string, err error) {
-	if !strings.HasPrefix(content, "---\n") && !strings.HasPrefix(content, "---\r\n") {
+	// Check for opening delimiter: --- at line start, followed by newline.
+	var nlLen int
+	if strings.HasPrefix(content, "---\r\n") {
+		nlLen = 5
+	} else if strings.HasPrefix(content, "---\n") {
+		nlLen = 4
+	} else {
 		return "", content, nil
 	}
 
-	rest := content[4:]
-	if strings.HasPrefix(content, "---\r\n") {
-		rest = content[5:]
-	}
+	rest := content[nlLen:]
 
-	idx := strings.Index(rest, "\n---")
-	if idx < 0 {
+	// Find the closing --- on its own line (not mid-paragraph).
+	loc := closeFrontmatterRe.FindStringIndex(rest)
+	if loc == nil {
 		return "", "", fmt.Errorf("unterminated frontmatter: missing closing ---")
 	}
 
-	frontmatter = strings.TrimSpace(rest[:idx])
-	body = rest[idx+4:]
-	if len(body) > 0 && body[0] == '\r' {
-		body = body[1:]
-	}
-	if len(body) > 0 && body[0] == '\n' {
-		body = body[1:]
-	}
+	frontmatter = strings.TrimSpace(rest[:loc[0]])
+	// Skip past the closing --- and its trailing newline.
+	afterClose := rest[loc[1]:]
+	afterClose = strings.TrimLeft(afterClose, "\r\n")
+	body = afterClose
 	return frontmatter, body, nil
 }
 
@@ -243,25 +275,6 @@ func FormatInstruction(base string, rules []Rule) string {
 	return sb.String()
 }
 
-// LoadAndFormat is a convenience function that loads rules from dir and
-// returns a map of agent name → formatted instruction, keyed by the
-// agents that have matching rules.
-func LoadAndFormat(dir string, baseInstructions map[string]string) (map[string]string, error) {
-	rules, err := Load(dir)
-	if err != nil {
-		return nil, err
-	}
-	if len(rules) == 0 {
-		return baseInstructions, nil
-	}
-
-	result := make(map[string]string, len(baseInstructions))
-	for agent, base := range baseInstructions {
-		result[agent] = FormatInstruction(base, ForAgent(rules, agent))
-	}
-	return result, nil
-}
-
 // DefaultRulesDir is the conventional location for repository rules.
 const DefaultRulesDir = ".review/rules"
 
@@ -274,3 +287,4 @@ func FindRulesDir(repoRoot string) string {
 	}
 	return ""
 }
+

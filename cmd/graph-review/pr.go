@@ -114,6 +114,8 @@ local checkout.`,
 				if dir, ok := state[tools.RepoPathStateKey].(string); ok {
 					repoRoot = dir
 				}
+			} else {
+				repoRoot, _ = os.Getwd()
 			}
 
 			label := fmt.Sprintf("reviewing PR %s#%d (%d bytes) with model %s",
