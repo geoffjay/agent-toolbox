@@ -3,8 +3,8 @@
 package review
 
 import (
-	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/geoffjay/graph-review/internal/github"
@@ -12,7 +12,7 @@ import (
 
 var findingRe = regexp.MustCompile(`(?m)^\s*[-*]\s+(.+)`)
 
-var fileLineRe = regexp.MustCompile(`([^\s:` + "`" + `]+?\.[a-zA-Z0-9]+)(?::(\d+)(?:[-,](\d+))?)?`)
+var fileLineRe = regexp.MustCompile("`([^`]+\\.[a-zA-Z0-9]+):(\\d+)(?:[-,](\\d+))?`")
 
 // Finding represents a single parsed review finding with optional
 // file and line location.
@@ -49,6 +49,7 @@ func (f Finding) ToComment() github.ReviewComment {
 // reference a file:line pattern.
 func ParseFindings(report string) []Finding {
 	var findings []Finding
+	var err error
 	for _, line := range strings.Split(report, "\n") {
 		if !findingRe.MatchString(line) {
 			continue
@@ -65,11 +66,15 @@ func ParseFindings(report string) []Finding {
 
 		f := Finding{Body: text}
 		f.File = loc[1]
-		if loc[2] != "" {
-			fmt.Sscanf(loc[2], "%d", &f.Line)
+		f.Line, err = strconv.Atoi(loc[2])
+		if err != nil || f.Line <= 0 {
+			continue
 		}
 		if loc[3] != "" {
-			fmt.Sscanf(loc[3], "%d", &f.EndLine)
+			f.EndLine, err = strconv.Atoi(loc[3])
+			if err != nil || f.EndLine < f.Line {
+				f.EndLine = f.Line
+			}
 		}
 		if f.EndLine == 0 {
 			f.EndLine = f.Line

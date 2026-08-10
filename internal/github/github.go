@@ -73,12 +73,12 @@ type Repo struct {
 
 // FileInfo describes a file changed by a PR.
 type FileInfo struct {
-	Filename     string `json:"filename"`
-	Status       string `json:"status"`
-	Additions    int    `json:"additions"`
-	Deletions    int    `json:"deletions"`
-	Changes      int    `json:"changes"`
-	Patch        string `json:"patch"`
+	Filename         string `json:"filename"`
+	Status           string `json:"status"`
+	Additions        int    `json:"additions"`
+	Deletions        int    `json:"deletions"`
+	Changes          int    `json:"changes"`
+	Patch            string `json:"patch"`
 	PreviousFilename string `json:"previous_filename,omitempty"`
 }
 
@@ -95,17 +95,17 @@ type Comment struct {
 
 // Review is a PR review summary.
 type Review struct {
-	ID        int64  `json:"id"`
-	User      User   `json:"user"`
-	Body      string `json:"body"`
-	State     string `json:"state"`
+	ID          int64  `json:"id"`
+	User        User   `json:"user"`
+	Body        string `json:"body"`
+	State       string `json:"state"`
 	SubmittedAt string `json:"submitted_at"`
 }
 
 // User is a GitHub user.
 type User struct {
-	Login     string `json:"login"`
-	HTMLURL   string `json:"html_url"`
+	Login   string `json:"login"`
+	HTMLURL string `json:"html_url"`
 }
 
 // RepoRef identifies an owner/repo pair, e.g. "geoffjay/graph-review".
@@ -197,11 +197,11 @@ func (c *Client) ListReviews(ctx context.Context, ref RepoRef, number int) ([]Re
 
 // ReviewComment is a single inline comment anchored to a diff line.
 type ReviewComment struct {
-	Path     string `json:"path"`
-	Line     int    `json:"line,omitempty"`
-	Side     string `json:"side"`
-	Body     string `json:"body"`
-	StartLine int   `json:"start_line,omitempty"`
+	Path      string `json:"path"`
+	Line      int    `json:"line,omitempty"`
+	Side      string `json:"side"`
+	Body      string `json:"body"`
+	StartLine int    `json:"start_line,omitempty"`
 }
 
 // PostReviewRequest is the body for POST /repos/{owner}/{repo}/pulls/{number}/reviews.
@@ -213,9 +213,9 @@ type PostReviewRequest struct {
 
 // PostReviewResponse is the subset of the response we care about.
 type PostReviewResponse struct {
-	ID       int64  `json:"id"`
-	HTMLURL  string `json:"html_url"`
-	State    string `json:"state"`
+	ID      int64  `json:"id"`
+	HTMLURL string `json:"html_url"`
+	State   string `json:"state"`
 }
 
 // PostReview submits a PR review with inline comments. The event must be
@@ -302,7 +302,7 @@ func (c *Client) postJSON(ctx context.Context, path string, body any, v any) err
 		return err
 	}
 	defer resp.Body.Close()
-	if err := checkStatus(resp, http.StatusCreated); err != nil {
+	if err := checkStatus(resp, http.StatusOK); err != nil {
 		return err
 	}
 	dec := json.NewDecoder(resp.Body)

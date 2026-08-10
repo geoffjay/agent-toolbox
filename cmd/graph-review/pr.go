@@ -60,6 +60,10 @@ local checkout.`,
 				return fmt.Errorf("invalid PR number %q: %w", args[1], err)
 			}
 
+			if postComments && githubToken == "" && os.Getenv("GITHUB_TOKEN") == "" {
+				return fmt.Errorf("--post-comments requires --github-token or GITHUB_TOKEN env var")
+			}
+
 			client := github.NewClient(githubToken)
 
 			fmt.Fprintln(os.Stderr, "fetching PR", ref.String()+"#"+args[1])
