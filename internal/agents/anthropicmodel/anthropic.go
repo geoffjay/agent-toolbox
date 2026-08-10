@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -89,11 +90,18 @@ func (m *anthropicModel) generate(ctx context.Context, params anthropic.MessageN
 	return func(yield func(*model.LLMResponse, error) bool) {
 		resp, err := m.client.Messages.New(ctx, params)
 		if err != nil {
+			log.Printf("[anthropic] API call failed: %v", err)
 			yield(nil, fmt.Errorf("anthropic: call failed: %w", err))
 			return
 		}
+		log.Printf("[anthropic] response: stop_reason=%s, %d content blocks, model=%s, input_tokens=%d, output_tokens=%d",
+			resp.StopReason, len(resp.Content), resp.Model, resp.Usage.InputTokens, resp.Usage.OutputTokens)
+		for i, block := range resp.Content {
+			log.Printf("[anthropic] block[%d]: type=%s, text_len=%d, tool_use=%v", i, block.Type, len(block.Text), block.Type == "tool_use")
+		}
 		genaiResp, err := convertResponse(resp)
 		if err != nil {
+			log.Printf("[anthropic] convertResponse error: %v", err)
 			yield(nil, err)
 			return
 		}
@@ -218,9 +226,32 @@ func buildParams(modelName string, req *model.LLMRequest) (anthropic.MessageNewP
 
 	system, messages, err := convertContents(req.Contents)
 	if err != nil {
+		log.Printf("[anthropic] convertContents error: %v", err)
 		return anthropic.MessageNewParams{}, err
 	}
+
+	// The ADK passes the agent instruction as Config.SystemInstruction,
+	// not as a content message with role "system".
+	if req.Config != nil && req.Config.SystemInstruction != nil {
+		var sb strings.Builder
+		for _, part := range req.Config.SystemInstruction.Parts {
+			if part != nil && part.Text != "" {
+				sb.WriteString(part.Text)
+				sb.WriteString("\n")
+			}
+		}
+		si := strings.TrimSpace(sb.String())
+		if si != "" {
+			if system != "" {
+				system = si + "\n\n" + system
+			} else {
+				system = si
+			}
+		}
+	}
+
 	if len(messages) == 0 {
+		log.Printf("[anthropic] no messages to send")
 		return anthropic.MessageNewParams{}, ErrNoContents
 	}
 	params.Messages = messages
@@ -229,15 +260,20 @@ func buildParams(modelName string, req *model.LLMRequest) (anthropic.MessageNewP
 	}
 
 	if err := applyGenerationConfig(&params, req.Config); err != nil {
+		log.Printf("[anthropic] applyGenerationConfig error: %v", err)
 		return anthropic.MessageNewParams{}, err
 	}
 
 	tools, err := convertTools(req.Config)
 	if err != nil {
+		log.Printf("[anthropic] convertTools error: %v", err)
 		return anthropic.MessageNewParams{}, err
 	}
 	if len(tools) > 0 {
 		params.Tools = tools
+		log.Printf("[anthropic] sending %d tools, %d messages, system_len=%d", len(tools), len(messages), len(system))
+	} else {
+		log.Printf("[anthropic] sending 0 tools, %d messages, system_len=%d", len(messages), len(system))
 	}
 
 	if cfg := req.Config; cfg != nil && cfg.ToolConfig != nil {
