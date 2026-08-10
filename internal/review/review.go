@@ -86,7 +86,13 @@ func ParseFindings(report string) []Finding {
 
 // ExtractVerdict scans the report for the verdict line and returns the
 // GitHub review event ("APPROVED", "REQUEST_CHANGES", or "COMMENT").
+// Falls back to COMMENT when the report is incomplete or has no
+// substantive findings section.
 func ExtractVerdict(report string) string {
+	findings := extractSection(report, "## Findings")
+	if findings == "" || strings.Contains(strings.ToLower(findings), "none reported") {
+		return "COMMENT"
+	}
 	section := extractSection(report, "## Verdict")
 	if section == "" {
 		return "COMMENT"
@@ -97,8 +103,6 @@ func ExtractVerdict(report string) string {
 		return "APPROVED"
 	case strings.Contains(lower, "request changes"):
 		return "REQUEST_CHANGES"
-	case strings.Contains(lower, "needs discussion"):
-		return "COMMENT"
 	default:
 		return "COMMENT"
 	}
