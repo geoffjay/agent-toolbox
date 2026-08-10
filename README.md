@@ -93,9 +93,18 @@ repo-inspection tools have code to look at. Flags:
 - `--no-clone` — skip the clone; tools fall back to the working directory
 - `--clone-repo <path>` — use an existing local checkout instead of cloning
 - `--no-tools` — disable all tools on the reviewer agents
+- `--post-comments` — post the review summary as a GitHub PR review with
+  inline comments anchored to the file/line references in the findings
+  (requires `--github-token`)
 
 Without a token, only public repos work and the API is rate-limited to 60
 requests/hour.
+
+To post the review back to GitHub:
+
+```sh
+graph-review review pr geoffjay/graph-review 42 -m gpt-4o-mini --post-comments
+```
 
 ### Model configuration
 

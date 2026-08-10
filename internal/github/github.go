@@ -73,12 +73,12 @@ type Repo struct {
 
 // FileInfo describes a file changed by a PR.
 type FileInfo struct {
-	Filename     string `json:"filename"`
-	Status       string `json:"status"`
-	Additions    int    `json:"additions"`
-	Deletions    int    `json:"deletions"`
-	Changes      int    `json:"changes"`
-	Patch        string `json:"patch"`
+	Filename         string `json:"filename"`
+	Status           string `json:"status"`
+	Additions        int    `json:"additions"`
+	Deletions        int    `json:"deletions"`
+	Changes          int    `json:"changes"`
+	Patch            string `json:"patch"`
 	PreviousFilename string `json:"previous_filename,omitempty"`
 }
 
@@ -95,17 +95,17 @@ type Comment struct {
 
 // Review is a PR review summary.
 type Review struct {
-	ID        int64  `json:"id"`
-	User      User   `json:"user"`
-	Body      string `json:"body"`
-	State     string `json:"state"`
+	ID          int64  `json:"id"`
+	User        User   `json:"user"`
+	Body        string `json:"body"`
+	State       string `json:"state"`
 	SubmittedAt string `json:"submitted_at"`
 }
 
 // User is a GitHub user.
 type User struct {
-	Login     string `json:"login"`
-	HTMLURL   string `json:"html_url"`
+	Login   string `json:"login"`
+	HTMLURL string `json:"html_url"`
 }
 
 // RepoRef identifies an owner/repo pair, e.g. "geoffjay/graph-review".
@@ -195,6 +195,43 @@ func (c *Client) ListReviews(ctx context.Context, ref RepoRef, number int) ([]Re
 	return reviews, nil
 }
 
+// ReviewComment is a single inline comment anchored to a diff line.
+type ReviewComment struct {
+	Path      string `json:"path"`
+	Line      int    `json:"line,omitempty"`
+	Side      string `json:"side"`
+	Body      string `json:"body"`
+	StartLine int    `json:"start_line,omitempty"`
+}
+
+// PostReviewRequest is the body for POST /repos/{owner}/{repo}/pulls/{number}/reviews.
+type PostReviewRequest struct {
+	Body     string          `json:"body"`
+	Event    string          `json:"event"`
+	Comments []ReviewComment `json:"comments,omitempty"`
+}
+
+// PostReviewResponse is the subset of the response we care about.
+type PostReviewResponse struct {
+	ID      int64  `json:"id"`
+	HTMLURL string `json:"html_url"`
+	State   string `json:"state"`
+}
+
+// PostReview submits a PR review with inline comments. The event must be
+// one of "APPROVED", "REQUEST_CHANGES", or "COMMENT". A token is required.
+func (c *Client) PostReview(ctx context.Context, ref RepoRef, number int, req *PostReviewRequest) (*PostReviewResponse, error) {
+	if c.token == "" {
+		return nil, ErrNoToken
+	}
+	path := fmt.Sprintf("/repos/%s/pulls/%d/reviews", ref, number)
+	var resp PostReviewResponse
+	if err := c.postJSON(ctx, path, req, &resp); err != nil {
+		return nil, fmt.Errorf("post review %s#%d: %w", ref, number, err)
+	}
+	return &resp, nil
+}
+
 // CloneURL returns a clone URL with the token inlined for HTTPS auth when
 // a token is set; otherwise the plain clone URL. Intended for use by
 // `git clone` in the PR subcommand.
@@ -230,6 +267,35 @@ func (c *Client) getJSON(ctx context.Context, path string, v any) error {
 		return err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
+	c.applyAuth(req)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if err := checkStatus(resp, http.StatusOK); err != nil {
+		return err
+	}
+	dec := json.NewDecoder(resp.Body)
+	if err := dec.Decode(v); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+	return nil
+}
+
+// postJSON issues a POST with a JSON body and decodes the response into v.
+func (c *Client) postJSON(ctx context.Context, path string, body any, v any) error {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+	endpoint := c.baseURL + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Content-Type", "application/json")
 	c.applyAuth(req)
 	resp, err := c.http.Do(req)
 	if err != nil {

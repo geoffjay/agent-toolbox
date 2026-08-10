@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/geoffjay/graph-review/internal/github"
+	"github.com/geoffjay/graph-review/internal/review"
 	"github.com/geoffjay/graph-review/internal/tools"
 )
 
@@ -20,12 +21,13 @@ import (
 // pr_reviews tools work.
 func reviewPRCmd() *cobra.Command {
 	var (
-		mf          modelFlags
-		pf          pipelineFlags
-		githubToken string
-		sessionID   string
-		noClone     bool
-		cloneRepo   string
+		mf           modelFlags
+		pf           pipelineFlags
+		githubToken  string
+		sessionID    string
+		noClone      bool
+		cloneRepo    string
+		postComments bool
 	)
 
 	cmd := &cobra.Command{
@@ -56,6 +58,10 @@ local checkout.`,
 			number, err := strconv.Atoi(args[1])
 			if err != nil {
 				return fmt.Errorf("invalid PR number %q: %w", args[1], err)
+			}
+
+			if postComments && githubToken == "" && os.Getenv("GITHUB_TOKEN") == "" {
+				return fmt.Errorf("--post-comments requires --github-token or GITHUB_TOKEN env var")
 			}
 
 			client := github.NewClient(githubToken)
@@ -108,7 +114,7 @@ local checkout.`,
 					ref, number, pr.Title, len(diff), mf.modelName)
 			}
 
-			return runPipeline(ctx, runPipelineInput{
+			report, err := runPipeline(ctx, runPipelineInput{
 				modelFlags:    mf,
 				pipelineFlags: pf,
 				diff:          diff,
@@ -116,6 +122,27 @@ local checkout.`,
 				state:         state,
 				label:         label,
 			})
+			if err != nil {
+				return err
+			}
+
+			if postComments {
+				if strings.TrimSpace(report) == "" {
+					fmt.Fprintln(os.Stderr, "no review output to post")
+					return nil
+				}
+				findings := review.ParseFindings(report)
+				req := review.BuildReviewRequest(report, findings)
+				fmt.Fprintf(os.Stderr, "posting review (%s, %d inline comments) to %s#%d\n",
+					req.Event, len(req.Comments), ref, number)
+				resp, err := client.PostReview(ctx, ref, number, req)
+				if err != nil {
+					return fmt.Errorf("post review: %w", err)
+				}
+				fmt.Fprintf(os.Stderr, "review posted: %s\n", resp.HTMLURL)
+			}
+
+			return nil
 		},
 	}
 
@@ -125,6 +152,7 @@ local checkout.`,
 	cmd.Flags().StringVar(&sessionID, "session", "", "Session ID for the runner (random by default)")
 	cmd.Flags().BoolVar(&noClone, "no-clone", false, "Do not clone the PR repo; tools fall back to the working directory")
 	cmd.Flags().StringVar(&cloneRepo, "clone-repo", "", "Use an existing local checkout instead of cloning")
+	cmd.Flags().BoolVar(&postComments, "post-comments", false, "Post the review as a PR review with inline comments (requires --github-token)")
 
 	return cmd
 }
