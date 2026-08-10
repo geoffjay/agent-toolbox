@@ -215,7 +215,62 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 		}
 	}
 	fmt.Println()
-	return output.String(), nil
+
+	report := output.String()
+	if warnShallowReview(report, in.diff) {
+		fmt.Fprintln(os.Stderr, "\nWARNING: the review produced no findings for a non-trivial diff.")
+		fmt.Fprintln(os.Stderr, "This may indicate the model did not thoroughly analyze the code.")
+		fmt.Fprintln(os.Stderr, "Consider using a stronger model or reviewing manually.")
+	}
+	return report, nil
+}
+
+// warnShallowReview returns true if the report has no findings and the
+// diff is non-trivial (more than 10 changed lines, excluding file headers
+// and index lines).
+func warnShallowReview(report, diff string) bool {
+	if countDiffLines(diff) <= 10 {
+		return false
+	}
+	findings := extractFindingsSection(report)
+	if findings == "" {
+		return true
+	}
+	lower := strings.ToLower(findings)
+	return strings.Contains(lower, "no findings") ||
+		strings.Contains(lower, "none reported") ||
+		strings.Contains(lower, "no issues")
+}
+
+func countDiffLines(diff string) int {
+	count := 0
+	for _, line := range strings.Split(diff, "\n") {
+		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+			count++
+		} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+			count++
+		}
+	}
+	return count
+}
+
+func extractFindingsSection(report string) string {
+	lines := strings.Split(report, "\n")
+	var sb strings.Builder
+	capturing := false
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "## Findings" {
+			capturing = true
+			continue
+		}
+		if capturing {
+			if strings.HasPrefix(strings.TrimSpace(line), "## ") {
+				break
+			}
+			sb.WriteString(line + "\n")
+		}
+	}
+	return strings.TrimSpace(sb.String())
 }
 
 // addModelFlags wires the model flags onto a command.
