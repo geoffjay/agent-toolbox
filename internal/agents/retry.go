@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"iter"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -65,7 +66,16 @@ func (r *retryModel) GenerateContent(ctx context.Context, req *model.LLMRequest,
 			if lastErr == nil {
 				return
 			}
+			slog.Warn("transient model error",
+				"model", r.Name(),
+				"attempt", attempt+1,
+				"max_retries", r.maxRetries,
+				"error", lastErr.Error())
 			if yielded || !isTransientError(lastErr) || attempt == r.maxRetries {
+				slog.Warn("transient errors exhausted; the agent continues with an empty response",
+					"model", r.Name(),
+					"error_code", "transient_error_exhausted",
+					"error", lastErr.Error())
 				yield(&model.LLMResponse{
 					Content: &genai.Content{
 						Role:  "model",

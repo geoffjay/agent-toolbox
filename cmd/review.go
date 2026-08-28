@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -30,6 +33,53 @@ type modelFlags struct {
 	modelName string
 	apiKey    string
 	baseURL   string
+}
+
+// loggingFlags carries the diagnostic log controls shared by every review
+// subcommand. Log output goes to stderr so stdout stays reserved for
+// review output.
+type loggingFlags struct {
+	verbose int  // -v count
+	debug   bool // --debug
+}
+
+// level maps the logging flags onto slog levels: warnings only by
+// default, pipeline flow with -v, and full model/tool payloads with
+// -vv or --debug.
+func (lf loggingFlags) level() slog.Level {
+	switch {
+	case lf.debug || lf.verbose >= 2:
+		return slog.LevelDebug
+	case lf.verbose == 1:
+		return slog.LevelInfo
+	default:
+		return slog.LevelWarn
+	}
+}
+
+// configureLogging installs the process-wide slog default so internal
+// packages (agents, tools) log at the level the user selected.
+func configureLogging(lf loggingFlags) {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lf.level()})))
+}
+
+func addLoggingFlags(cmd *cobra.Command, lf *loggingFlags) {
+	cmd.Flags().CountVarP(&lf.verbose, "verbose", "v",
+		"Increase stderr log verbosity: -v shows pipeline flow, -vv adds raw agent output and tool activity")
+	cmd.Flags().BoolVar(&lf.debug, "debug", false,
+		"Log debug detail: every model event, tool call arguments, and tool results")
+}
+
+// debugPayloadMax bounds payload logging at debug level so a large diff
+// response cannot flood the terminal.
+const debugPayloadMax = 4 << 10 // 4 KiB
+
+// debugSnippet truncates s for debug payload logs.
+func debugSnippet(s string) string {
+	if len(s) <= debugPayloadMax {
+		return s
+	}
+	return s[:debugPayloadMax] + fmt.Sprintf("\n… (%d bytes truncated)", len(s)-debugPayloadMax)
 }
 
 // pipelineFlags carries the pipeline-level options shared by every review
@@ -63,6 +113,7 @@ func reviewDiffCmd() *cobra.Command {
 	var (
 		mf        modelFlags
 		pf        pipelineFlags
+		lf        loggingFlags
 		repoPath  string
 		sessionID string
 	)
@@ -79,6 +130,7 @@ at --repo (default: working directory). Use --no-tools to disable them.`,
 		Aliases: []string{"file"},
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			configureLogging(lf)
 			ctx := cmd.Context()
 
 			diff, err := readDiff(args)
@@ -111,6 +163,7 @@ at --repo (default: working directory). Use --no-tools to disable them.`,
 	}
 
 	addModelFlags(cmd, &mf)
+	addLoggingFlags(cmd, &lf)
 	addPipelineFlags(cmd, &pf)
 	cmd.Flags().StringVar(&repoPath, "repo", ".", "Repository root the review tools operate in")
 	cmd.Flags().StringVar(&sessionID, "session", "", "Session ID for the runner (random by default)")
@@ -122,11 +175,13 @@ at --repo (default: working directory). Use --no-tools to disable them.`,
 type runPipelineInput struct {
 	modelFlags
 	pipelineFlags
+	loggingFlags
 	diff      string
 	sessionID string
 	state     map[string]any
 	label     string
 	repoRoot  string
+	noClone   bool
 }
 
 // runPipeline builds the model, tools, graph, and runner from the given
@@ -187,6 +242,15 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 		sessionID = randomSessionID()
 	}
 
+	slog.Info("pipeline starting",
+		"label", in.label,
+		"model", m.Name(),
+		"tools", toolNames(reviewTools),
+		"rules_dir", rulesDir,
+		"repo_root", in.repoRoot,
+		"state", in.state,
+		"session", sessionID)
+
 	msg := &genai.Content{
 		Parts: []*genai.Part{
 			{Text: "Please review the following diff:\n\n```diff\n" + in.diff + "\n```"},
@@ -197,19 +261,40 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 	fmt.Fprintln(os.Stderr, in.label)
 
 	var output strings.Builder
+	stats := &pipelineStats{agentText: map[string]int{}, toolCalls: map[string]int{}}
 
 	runOpts := []runner.RunOption{
 		runner.WithStateDelta(in.state),
 	}
 	for ev, err := range r.Run(ctx, userID, sessionID, msg, agentRunConfig(), runOpts...) {
 		if err != nil {
+			stats.logActivities()
 			return output.String(), err
 		}
 		if ev == nil || ev.Content == nil {
 			continue
 		}
+		stats.events++
 		for _, part := range ev.Content.Parts {
-			if part.Text != "" && !part.Thought {
+			switch {
+			case part.FunctionCall != nil:
+				stats.toolCalls[ev.Author]++
+				slog.Debug("tool call",
+					"agent", ev.Author,
+					"tool", part.FunctionCall.Name,
+					"args", debugSnippet(jsonString(part.FunctionCall.Args)))
+			case part.FunctionResponse != nil:
+				slog.Debug("tool result",
+					"agent", ev.Author,
+					"tool", part.FunctionResponse.Name,
+					"result", debugSnippet(jsonString(part.FunctionResponse.Response)))
+			case part.Text != "":
+				stats.agentText[ev.Author] += len(part.Text)
+				if part.Thought {
+					slog.Debug("model thought", "agent", ev.Author, "text", debugSnippet(part.Text))
+					continue
+				}
+				slog.Debug("agent text", "agent", ev.Author, "text", debugSnippet(part.Text))
 				fmt.Print(part.Text)
 				if ev.Author == agents.SummaryAgentName {
 					output.WriteString(part.Text)
@@ -220,12 +305,100 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 	fmt.Println()
 
 	report := output.String()
-	if warnShallowReview(report, in.diff) {
+	findings := review.ParseFindings(report)
+	slog.Info("pipeline finished",
+		"events", stats.events,
+		"tool_calls", stats.totalToolCalls(),
+		"report_bytes", len(report),
+		"findings", len(findings))
+	stats.logActivities()
+
+	if strings.TrimSpace(report) == "" {
+		fmt.Fprintln(os.Stderr, "\nWARNING: the review produced no report at all.")
+		fmt.Fprintln(os.Stderr, "Every agent returned an empty response — the model likely failed.")
+		fmt.Fprintln(os.Stderr, "Check the log lines above; re-run with -vv to trace the failure.")
+		printShallowDiagnostics(os.Stderr, in, stats)
+	} else if warnShallowReview(report, in.diff) {
 		fmt.Fprintln(os.Stderr, "\nWARNING: the review produced no findings for a non-trivial diff.")
 		fmt.Fprintln(os.Stderr, "This may indicate the model did not thoroughly analyze the code.")
 		fmt.Fprintln(os.Stderr, "Consider using a stronger model or reviewing manually.")
+		printShallowDiagnostics(os.Stderr, in, stats)
 	}
 	return report, nil
+}
+
+// printShallowDiagnostics explains what the pipeline actually observed,
+// so an empty review can be traced to missing tool use, missing agent
+// output, or a mis-rooted repo.
+func printShallowDiagnostics(w io.Writer, in runPipelineInput, stats *pipelineStats) {
+	fmt.Fprintf(w, "\ndiagnostics: %d events, %d tool call(s)\n", stats.events, stats.totalToolCalls())
+	for _, author := range sortedKeys(stats.agentText) {
+		fmt.Fprintf(w, "  %s: %d bytes of output, %d tool call(s)\n",
+			author, stats.agentText[author], stats.toolCalls[author])
+	}
+	if in.noTools {
+		fmt.Fprintln(w, "  tools were disabled with --no-tools: reviewers saw only the diff")
+	} else if stats.totalToolCalls() == 0 {
+		fmt.Fprintln(w, "  no reviewer tool calls were made: the diff was reviewed without any repo context")
+	}
+	if in.noClone {
+		fmt.Fprintln(w, "  --no-clone is set: repo-inspection tools ran against the current")
+		fmt.Fprintln(w, "  directory, which may not be the PR repository; prefer --clone-repo <path>")
+	}
+	fmt.Fprintln(w, "re-run with -vv (or --debug) to trace every model event and tool payload on stderr")
+}
+
+// jsonString renders v as JSON for debug logs, falling back to %v.
+func jsonString(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprintf("%v", v)
+	}
+	return string(b)
+}
+
+// toolNames lists tool names for the pipeline-start log line.
+func toolNames(tools []tool.Tool) []string {
+	names := make([]string, 0, len(tools))
+	for _, t := range tools {
+		names = append(names, t.Name())
+	}
+	return names
+}
+
+// pipelineStats records what the run actually did so shallow reviews can
+// be diagnosed from observed behavior instead of guesses.
+type pipelineStats struct {
+	events    int
+	toolCalls map[string]int // agent -> tool call count
+	agentText map[string]int // agent -> non-thought text bytes
+}
+
+func (s *pipelineStats) totalToolCalls() int {
+	n := 0
+	for _, c := range s.toolCalls {
+		n += c
+	}
+	return n
+}
+
+// logActivities emits per-agent activity at info level.
+func (s *pipelineStats) logActivities() {
+	for _, author := range sortedKeys(s.agentText) {
+		slog.Info("agent activity",
+			"agent", author,
+			"text_bytes", s.agentText[author],
+			"tool_calls", s.toolCalls[author])
+	}
+}
+
+func sortedKeys(m map[string]int) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // warnShallowReview returns true if the report has no findings and the

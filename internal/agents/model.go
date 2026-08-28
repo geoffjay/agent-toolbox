@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"google.golang.org/adk/v2/model"
@@ -96,7 +97,17 @@ func newOpenAIModel(ctx context.Context, cfg ModelConfig) (model.LLM, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create openai model: %w", err)
 	}
+	slog.Info("model built", "provider", "openai", "model", name, "base_url", baseURL, "api_key", redactedKey(apiKey))
 	return wrapWithRetry(m), nil
+}
+
+// redactedKey reports whether an API key is present without ever
+// exposing its value in logs.
+func redactedKey(key string) string {
+	if key == "" {
+		return "unset"
+	}
+	return "set"
 }
 
 func newAnthropicModel(ctx context.Context, cfg ModelConfig) (model.LLM, error) {
@@ -125,5 +136,6 @@ func newAnthropicModel(ctx context.Context, cfg ModelConfig) (model.LLM, error) 
 	if err != nil {
 		return nil, fmt.Errorf("create anthropic model: %w", err)
 	}
+	slog.Info("model built", "provider", "anthropic", "model", name, "base_url", baseURL, "api_key", redactedKey(apiKey))
 	return wrapWithRetry(m), nil
 }

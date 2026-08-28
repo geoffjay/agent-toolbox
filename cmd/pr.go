@@ -25,6 +25,7 @@ func reviewPRCmd() *cobra.Command {
 	var (
 		mf           modelFlags
 		pf           pipelineFlags
+		lf           loggingFlags
 		githubToken  string
 		sessionID    string
 		noClone      bool
@@ -56,6 +57,7 @@ and inline comments and asks for confirmation on the terminal; nothing is
 posted unless you approve. Pass --assume-yes to post unattended (CI).`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			configureLogging(lf)
 			ctx := cmd.Context()
 
 			ref, err := github.ParseRepoRef(args[0])
@@ -135,6 +137,7 @@ posted unless you approve. Pass --assume-yes to post unattended (CI).`,
 				state:         state,
 				label:         label,
 				repoRoot:      repoRoot,
+				noClone:       noClone,
 			})
 			if err != nil {
 				return err
@@ -178,6 +181,7 @@ posted unless you approve. Pass --assume-yes to post unattended (CI).`,
 	}
 
 	addModelFlags(cmd, &mf)
+	addLoggingFlags(cmd, &lf)
 	addPipelineFlags(cmd, &pf)
 	cmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub API token (env GITHUB_TOKEN)")
 	cmd.Flags().StringVar(&sessionID, "session", "", "Session ID for the runner (random by default)")
@@ -185,7 +189,6 @@ posted unless you approve. Pass --assume-yes to post unattended (CI).`,
 	cmd.Flags().StringVar(&cloneRepo, "clone-repo", "", "Use an existing local checkout instead of cloning")
 	cmd.Flags().BoolVar(&postComments, "post-comments", false, "Post the review as a PR review with inline comments (requires --github-token)")
 	cmd.Flags().BoolVar(&assumeYes, "assume-yes", false, "Skip the human confirmation prompt before posting (for CI)")
-
 	return cmd
 }
 

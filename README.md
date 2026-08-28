@@ -140,6 +140,24 @@ repo-inspection tools have code to look at. Flags:
 - `--assume-yes` — skip the confirmation prompt and post unattended
   (for CI or scripted runs)
 
+### Diagnostic logging
+
+All review subcommands share the logging flags. Log output goes to
+stderr; stdout stays reserved for the review report.
+
+- `-v` — verbose: the resolved model/provider configuration, the tool
+  list, the loaded rules directory, per-agent output size and tool-call
+  counts, and retry activity.
+- `-vv` (or `--debug`) — debug: every model event plus each tool call's
+  arguments and result (payloads truncated at 4 KiB).
+- `--debug` — same as `-vv`.
+
+When a review finishes with no findings on a non-trivial diff, the
+warning is followed by diagnostics showing what the pipeline actually
+observed — per-agent output bytes, tool-call counts, and a hint when
+`--no-clone` left the repo tools pointed at the wrong directory — to
+distinguish an underpowered model from a broken pipeline.
+
 Without a token, only public repos work and the API is rate-limited to 60
 requests/hour.
 
