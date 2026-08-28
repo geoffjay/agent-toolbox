@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/geoffjay/graph-review/internal/agents"
 	"github.com/geoffjay/graph-review/internal/graph"
+	"github.com/geoffjay/graph-review/internal/review"
 	"github.com/geoffjay/graph-review/internal/rules"
 	"github.com/geoffjay/graph-review/internal/tools"
 	"google.golang.org/adk/v2/runner"
@@ -181,7 +184,7 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 	userID := "graph-review-cli"
 	sessionID := in.sessionID
 	if sessionID == "" {
-		sessionID = "review-" + time.Now().Format("20060102-150405")
+		sessionID = randomSessionID()
 	}
 
 	msg := &genai.Content{
@@ -232,7 +235,7 @@ func warnShallowReview(report, diff string) bool {
 	if countDiffLines(diff) <= 10 {
 		return false
 	}
-	findings := extractFindingsSection(report)
+	findings := review.Section(report, "## Findings")
 	if findings == "" {
 		return true
 	}
@@ -252,25 +255,6 @@ func countDiffLines(diff string) int {
 		}
 	}
 	return count
-}
-
-func extractFindingsSection(report string) string {
-	lines := strings.Split(report, "\n")
-	var sb strings.Builder
-	capturing := false
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "## Findings" {
-			capturing = true
-			continue
-		}
-		if capturing {
-			if strings.HasPrefix(strings.TrimSpace(line), "## ") {
-				break
-			}
-			sb.WriteString(line + "\n")
-		}
-	}
-	return strings.TrimSpace(sb.String())
 }
 
 // addModelFlags wires the model flags onto a command.
@@ -302,4 +286,14 @@ func readDiff(args []string) (string, error) {
 
 func agentRunConfig() agent.RunConfig {
 	return agent.RunConfig{}
+}
+
+// randomSessionID returns a sortable, collision-resistant session ID
+// for ad-hoc runs: a timestamp plus random hex suffix.
+func randomSessionID() string {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return "review-" + time.Now().Format("20060102-150405")
+	}
+	return "review-" + time.Now().Format("20060102-150405") + "-" + hex.EncodeToString(b)
 }

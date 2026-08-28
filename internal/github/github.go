@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -242,31 +241,7 @@ func (c *Client) PostReview(ctx context.Context, ref RepoRef, number int, req *P
 	return &resp, nil
 }
 
-// CloneURL returns a clone URL with the token inlined for HTTPS auth when
-// a token is set; otherwise the plain clone URL. Intended for use by
-// `git clone` in the PR subcommand.
-func (c *Client) CloneURL(repo CloneableRepo) string {
-	raw := repo.CloneableURL()
-	if c.token == "" {
-		return raw
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return raw
-	}
-	u.User = url.UserPassword("x-access-token", c.token)
-	return u.String()
-}
-
-// CloneableRepo is the minimal shape needed to build a clone URL.
-type CloneableRepo interface {
-	CloneableURL() string
-}
-
-// CloneableRepoFromPR builds a CloneableRepo from a PR's head repo.
-func CloneableRepoFromPR(pr *PR) CloneableRepo { return &pr.Head.Repo }
-
-// CloneableURL implements CloneableRepo.
+// CloneableURL returns the repo's plain HTTPS clone URL.
 func (r *Repo) CloneableURL() string { return r.CloneURL }
 
 // getJSON issues a GET with the default JSON media type and decodes into v.

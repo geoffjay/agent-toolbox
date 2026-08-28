@@ -81,8 +81,7 @@ func (r Rule) HasAgent(agent string) bool {
 // severity (blocker > major > minor > nit). Disabled rules are skipped.
 // Returns nil if dir does not exist.
 func Load(dir string) ([]Rule, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
+	if _, err := os.Stat(dir); err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
@@ -90,10 +89,24 @@ func Load(dir string) ([]Rule, error) {
 	}
 
 	var rules []Rule
-	for _, e := range entries {
-		if err := walkDir(dir, e, &rules); err != nil {
-			return nil, err
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
+		if d.IsDir() || !strings.EqualFold(filepath.Ext(d.Name()), ".md") {
+			return nil
+		}
+		rule, err := loadRule(path)
+		if err != nil {
+			return fmt.Errorf("load rule %q: %w", path, err)
+		}
+		if rule != nil {
+			rules = append(rules, *rule)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	sort.SliceStable(rules, func(i, j int) bool {
@@ -103,33 +116,6 @@ func Load(dir string) ([]Rule, error) {
 		return severityRank(rules[i].Severity) > severityRank(rules[j].Severity)
 	})
 	return rules, nil
-}
-
-func walkDir(base string, entry os.DirEntry, rules *[]Rule) error {
-	full := filepath.Join(base, entry.Name())
-	if entry.IsDir() {
-		entries, err := os.ReadDir(full)
-		if err != nil {
-			return fmt.Errorf("read subdir %q: %w", full, err)
-		}
-		for _, e := range entries {
-			if err := walkDir(full, e, rules); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
-		return nil
-	}
-	rule, err := loadRule(full)
-	if err != nil {
-		return fmt.Errorf("load rule %q: %w", full, err)
-	}
-	if rule != nil {
-		*rules = append(*rules, *rule)
-	}
-	return nil
 }
 
 var validAgents = map[string]bool{

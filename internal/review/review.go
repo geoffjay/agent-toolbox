@@ -50,7 +50,7 @@ func (f Finding) ToComment() github.ReviewComment {
 func ParseFindings(report string) []Finding {
 	var findings []Finding
 	var err error
-	for _, line := range strings.Split(extractSection(report, "## Findings"), "\n") {
+	for _, line := range strings.Split(Section(report, "## Findings"), "\n") {
 		if !findingRe.MatchString(line) {
 			continue
 		}
@@ -89,12 +89,12 @@ func ParseFindings(report string) []Finding {
 // Falls back to COMMENT when the report is incomplete or has no
 // substantive findings section.
 func ExtractVerdict(report string) string {
-	findings := extractSection(report, "## Findings")
+	findings := Section(report, "## Findings")
 	fl := strings.ToLower(findings)
 	if findings == "" || strings.Contains(fl, "none reported") || strings.Contains(fl, "no findings") {
 		return "COMMENT"
 	}
-	section := extractSection(report, "## Verdict")
+	section := Section(report, "## Verdict")
 	if section == "" {
 		return "COMMENT"
 	}
@@ -109,7 +109,10 @@ func ExtractVerdict(report string) string {
 	}
 }
 
-func extractSection(report, header string) string {
+// Section returns the report body under the given "## ..." header,
+// up to the next header of the same level. Returns "" when the header
+// is absent.
+func Section(report, header string) string {
 	lines := strings.Split(report, "\n")
 	var sb strings.Builder
 	capturing := false
@@ -141,4 +144,26 @@ func BuildReviewRequest(report string, findings []Finding) *github.PostReviewReq
 		}
 	}
 	return req
+}
+
+// FilterByFiles keeps only findings whose file is part of the PR's
+// changed-file list. Inline review comments are anchored to diff paths;
+// the GitHub API rejects comments on paths outside the diff, which
+// would force the whole review to fall back to a plain COMMENT. Paths
+// are matched exactly, plus the pre-rename name for renamed files.
+func FilterByFiles(findings []Finding, files []github.FileInfo) []Finding {
+	changed := make(map[string]bool, len(files))
+	for _, f := range files {
+		changed[f.Filename] = true
+		if f.PreviousFilename != "" {
+			changed[f.PreviousFilename] = true
+		}
+	}
+	kept := findings[:0]
+	for _, f := range findings {
+		if changed[f.File] {
+			kept = append(kept, f)
+		}
+	}
+	return kept
 }

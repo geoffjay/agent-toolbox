@@ -3,6 +3,8 @@ package review
 import (
 	"reflect"
 	"testing"
+
+	"github.com/geoffjay/graph-review/internal/github"
 )
 
 func TestParseFindings(t *testing.T) {
@@ -107,5 +109,31 @@ func TestToCommentRanges(t *testing.T) {
 	multi := Finding{File: "a.go", Line: 7, EndLine: 9, Body: "b"}
 	if c := multi.ToComment(); c.StartLine != 7 || c.Line != 9 {
 		t.Errorf("range comment = %+v, want StartLine 7, Line 9", c)
+	}
+}
+
+func TestFilterByFiles(t *testing.T) {
+	files := []github.FileInfo{
+		{Filename: "internal/rules/rules.go"},
+		{Filename: "renamed.go", PreviousFilename: "old.go"},
+	}
+	findings := []Finding{
+		{File: "internal/rules/rules.go", Line: 10, Body: "kept"},
+		{File: "old.go", Line: 5, Body: "kept via rename source"},
+		{File: "not-in-diff.go", Line: 1, Body: "dropped"},
+		{File: "", Line: 0, Body: "dropped"},
+	}
+	got := FilterByFiles(findings, files)
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2: %+v", len(got), got)
+	}
+	if got[0].Body != "kept" || got[1].Body != "kept via rename source" {
+		t.Errorf("kept the wrong findings: %+v", got)
+	}
+	if len(FilterByFiles(nil, files)) != 0 {
+		t.Error("nil findings should stay nil-length")
+	}
+	if len(FilterByFiles(findings, nil)) != 0 {
+		t.Error("no changed files means no comments")
 	}
 }

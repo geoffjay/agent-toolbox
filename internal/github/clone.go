@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,11 +24,14 @@ func (c *Client) CloneRepo(ctx context.Context, pr *PR) (dir string, cleanup fun
 	cleanup = func() { _ = os.RemoveAll(tmp) }
 
 	headRepo := &pr.Head.Repo
-	cloneURL := c.CloneURL(headRepo)
 
-	// Shallow clone the head ref, then pin to the exact SHA.
-	cmd := exec.CommandContext(ctx, "git",
-		"clone", "--depth", "1", "--branch", pr.Head.Ref, cloneURL, tmp)
+	// Shallow clone the head ref, then pin to the exact SHA. Auth goes
+	// through an extra header rather than the clone URL, so the token
+	// never lands in the cloned repo's config or git error output.
+	cloneArgs := append(c.gitAuthArgs(),
+		"clone", "--depth", "1", "--branch", pr.Head.Ref,
+		headRepo.CloneableURL(), tmp)
+	cmd := exec.CommandContext(ctx, "git", cloneArgs...)
 	if out, err := cmd.Output(); err != nil {
 		cleanup()
 		return "", nil, fmt.Errorf("git clone: %w: %s", err, trimErr(out))
@@ -40,7 +44,8 @@ func (c *Client) CloneRepo(ctx context.Context, pr *PR) (dir string, cleanup fun
 		if _, err := checkout.Output(); err != nil {
 			// Fall back to fetching the SHA directly; shallow clones may
 			// not have it yet.
-			fetch := exec.CommandContext(ctx, "git", "fetch", "--depth", "1", cloneURL, pr.Head.SHA)
+			fetch := exec.CommandContext(ctx, "git", append(c.gitAuthArgs(),
+				"fetch", "--depth", "1", headRepo.CloneableURL(), pr.Head.SHA)...)
 			fetch.Dir = tmp
 			if out2, ferr := fetch.Output(); ferr != nil {
 				cleanup()
@@ -69,4 +74,19 @@ func trimErr(out []byte) string {
 		s = s[len(s)-512:]
 	}
 	return s
+}
+
+// gitAuthArgs returns git -c options that authenticate HTTPS operations
+// via an Authorization header instead of embedding the token in the
+// URL. The empty credential.helper disables any system helper that
+// could prompt or intercept.
+func (c *Client) gitAuthArgs() []string {
+	if c.token == "" {
+		return nil
+	}
+	auth := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + c.token))
+	return []string{
+		"-c", "http.extraHeader=Authorization: Basic " + auth,
+		"-c", "credential.helper=",
+	}
 }

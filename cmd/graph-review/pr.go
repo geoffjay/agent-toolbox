@@ -85,37 +85,32 @@ local checkout.`,
 			}
 
 			// Resolve a repo root for the repo-inspection tools.
-			if !noClone {
-				cloneTarget := cloneRepo
-				if cloneTarget == "" {
-					shortSHA := pr.Head.SHA
-					if len(shortSHA) > 7 {
-						shortSHA = shortSHA[:7]
-					}
-					fmt.Fprintln(os.Stderr, "cloning", pr.Head.Repo.FullName, "at", shortSHA)
-					dir, cleanup, err := client.CloneRepo(ctx, pr)
-					if err != nil {
-						return fmt.Errorf("clone PR repo: %w", err)
-					}
-					defer cleanup()
-					cloneTarget = dir
-				}
-				abs, err := filepath.Abs(cloneTarget)
+			var repoRoot string
+			switch {
+			case noClone:
+				// Tools fall back to the working directory.
+				repoRoot, _ = os.Getwd()
+			case cloneRepo != "":
+				abs, err := filepath.Abs(cloneRepo)
 				if err != nil {
 					return fmt.Errorf("resolve clone path: %w", err)
 				}
-				state[tools.RepoPathStateKey] = abs
-			}
-
-			repoRoot := ""
-			if cloneRepo != "" {
-				repoRoot, _ = filepath.Abs(cloneRepo)
-			} else if !noClone {
-				if dir, ok := state[tools.RepoPathStateKey].(string); ok {
-					repoRoot = dir
+				repoRoot = abs
+			default:
+				shortSHA := pr.Head.SHA
+				if len(shortSHA) > 7 {
+					shortSHA = shortSHA[:7]
 				}
-			} else {
-				repoRoot, _ = os.Getwd()
+				fmt.Fprintln(os.Stderr, "cloning", pr.Head.Repo.FullName, "at", shortSHA)
+				dir, cleanup, err := client.CloneRepo(ctx, pr)
+				if err != nil {
+					return fmt.Errorf("clone PR repo: %w", err)
+				}
+				defer cleanup()
+				repoRoot = dir
+			}
+			if !noClone {
+				state[tools.RepoPathStateKey] = repoRoot
 			}
 
 			label := fmt.Sprintf("reviewing PR %s#%d (%d bytes) with model %s",
@@ -144,6 +139,17 @@ local checkout.`,
 					return nil
 				}
 				findings := review.ParseFindings(report)
+				// Drop findings anchored outside the PR diff; the API
+				// would reject the whole review over them.
+				if files, err := client.ListFiles(ctx, ref, number); err != nil {
+					fmt.Fprintln(os.Stderr, "warning: could not list PR files; posting findings unvalidated:", err)
+				} else {
+					before := len(findings)
+					findings = review.FilterByFiles(findings, files)
+					if dropped := before - len(findings); dropped > 0 {
+						fmt.Fprintf(os.Stderr, "dropping %d finding(s) whose file is not part of the PR diff\n", dropped)
+					}
+				}
 				req := review.BuildReviewRequest(report, findings)
 				fmt.Fprintf(os.Stderr, "posting review (%s, %d inline comments) to %s#%d\n",
 					req.Event, len(req.Comments), ref, number)
