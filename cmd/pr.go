@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -28,6 +30,7 @@ func reviewPRCmd() *cobra.Command {
 		noClone      bool
 		cloneRepo    string
 		postComments bool
+		assumeYes    bool
 	)
 
 	cmd := &cobra.Command{
@@ -46,7 +49,11 @@ By default the head repo is shallow-cloned into a temp directory so the
 repo-inspection tools (read_file, git_blame, git_log) can examine code
 beyond the diff hunks. Use --no-clone to skip the clone (tools then fall
 back to the working directory) or --clone-repo to point at an existing
-local checkout.`,
+local checkout.
+
+Submitting a review with --post-comments first shows the full review body
+and inline comments and asks for confirmation on the terminal; nothing is
+posted unless you approve. Pass --assume-yes to post unattended (CI).`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -151,8 +158,14 @@ local checkout.`,
 					}
 				}
 				req := review.BuildReviewRequest(report, findings)
-				fmt.Fprintf(os.Stderr, "posting review (%s, %d inline comments) to %s#%d\n",
-					req.Event, len(req.Comments), ref, number)
+				confirmed, err := confirmPost(req, ref, number, assumeYes)
+				if err != nil {
+					return err
+				}
+				if !confirmed {
+					fmt.Fprintln(os.Stderr, "review not posted")
+					return nil
+				}
 				resp, err := client.PostReview(ctx, ref, number, req)
 				if err != nil {
 					return fmt.Errorf("post review: %w", err)
@@ -171,6 +184,47 @@ local checkout.`,
 	cmd.Flags().BoolVar(&noClone, "no-clone", false, "Do not clone the PR repo; tools fall back to the working directory")
 	cmd.Flags().StringVar(&cloneRepo, "clone-repo", "", "Use an existing local checkout instead of cloning")
 	cmd.Flags().BoolVar(&postComments, "post-comments", false, "Post the review as a PR review with inline comments (requires --github-token)")
+	cmd.Flags().BoolVar(&assumeYes, "assume-yes", false, "Skip the human confirmation prompt before posting (for CI)")
 
 	return cmd
+}
+
+// confirmPost shows the exact review that would be submitted and requires
+// explicit human approval before posting. With assumeYes it skips the
+// prompt (for CI). When stdin is not an interactive terminal and assumeYes
+// is not set, it fails closed rather than posting unattended.
+func confirmPost(req *github.PostReviewRequest, ref github.RepoRef, number int, assumeYes bool) (bool, error) {
+	fmt.Fprintf(os.Stderr, "review to submit to %s#%d\n", ref, number)
+	fmt.Fprintf(os.Stderr, "  event: %s (%d inline comment(s))\n", req.Event, len(req.Comments))
+	fmt.Fprintln(os.Stderr, "  body:")
+	fmt.Fprintln(os.Stderr, req.Body)
+	for i, c := range req.Comments {
+		fmt.Fprintf(os.Stderr, "  comment %d — %s:%d:\n%s\n", i+1, c.Path, c.Line, c.Body)
+	}
+	if assumeYes {
+		return true, nil
+	}
+	stat, err := os.Stdin.Stat()
+	if err != nil || stat.Mode()&os.ModeCharDevice == 0 {
+		return false, fmt.Errorf("cannot prompt for approval: stdin is not a terminal; re-run interactively or pass --assume-yes")
+	}
+	return readApproval(os.Stdin, os.Stderr)
+}
+
+// readApproval prompts on out and reads a yes/no answer from in. Any
+// answer other than y/yes declines; an unreadable input (EOF with no
+// answer) is an error so that a closed pipe can never be read as silent
+// approval.
+func readApproval(in io.Reader, out io.Writer) (bool, error) {
+	fmt.Fprint(out, "post this review? [y/N]: ")
+	line, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil && strings.TrimSpace(line) == "" {
+		return false, fmt.Errorf("read confirmation: %w", err)
+	}
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		return true, nil
+	default:
+		return false, nil
+	}
 }

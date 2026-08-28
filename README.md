@@ -133,7 +133,12 @@ repo-inspection tools have code to look at. Flags:
 - `--no-tools` — disable all tools on the reviewer agents
 - `--post-comments` — post the review summary as a GitHub PR review with
   inline comments anchored to the file/line references in the findings
-  (requires `--github-token`)
+  (requires `--github-token`). Before anything is submitted, the full
+  review body and inline comments are printed and human approval is
+  required on the terminal; declined or non-interactive input aborts
+  without posting.
+- `--assume-yes` — skip the confirmation prompt and post unattended
+  (for CI or scripted runs)
 
 Without a token, only public repos work and the API is rate-limited to 60
 requests/hour.
