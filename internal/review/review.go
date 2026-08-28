@@ -50,7 +50,7 @@ func (f Finding) ToComment() github.ReviewComment {
 func ParseFindings(report string) []Finding {
 	var findings []Finding
 	var err error
-	for _, line := range strings.Split(report, "\n") {
+	for _, line := range strings.Split(extractSection(report, "## Findings"), "\n") {
 		if !findingRe.MatchString(line) {
 			continue
 		}

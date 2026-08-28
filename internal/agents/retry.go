@@ -48,11 +48,16 @@ func (r *retryModel) GenerateContent(ctx context.Context, req *model.LLMRequest,
 	return func(yield func(*model.LLMResponse, error) bool) {
 		for attempt := 0; attempt <= r.maxRetries; attempt++ {
 			var lastErr error
+			// Retrying after any chunk has been delivered would replay
+			// content the consumer already saw, so a partially-streamed
+			// response is never restarted.
+			yielded := false
 			for resp, err := range r.inner.GenerateContent(ctx, req, stream) {
 				if err != nil {
 					lastErr = err
 					break
 				}
+				yielded = true
 				if !yield(resp, nil) {
 					return
 				}
@@ -60,7 +65,7 @@ func (r *retryModel) GenerateContent(ctx context.Context, req *model.LLMRequest,
 			if lastErr == nil {
 				return
 			}
-			if !isTransientError(lastErr) || attempt == r.maxRetries {
+			if yielded || !isTransientError(lastErr) || attempt == r.maxRetries {
 				yield(&model.LLMResponse{
 					Content: &genai.Content{
 						Role:  "model",
