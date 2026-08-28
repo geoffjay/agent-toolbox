@@ -17,9 +17,9 @@ const TriageAgentName = "triage"
 // Route categories emitted by the triage agent. These map to downstream
 // reviewer nodes via workflow.StringRoute.
 const (
-	RouteStatic  = "static"
+	RouteStatic   = "static"
 	RouteSecurity = "security"
-	RouteBoth    = "both"
+	RouteBoth     = "both"
 )
 
 // DefaultTriageInstruction is the system instruction for the triage agent.

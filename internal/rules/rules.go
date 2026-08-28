@@ -287,4 +287,3 @@ func FindRulesDir(repoRoot string) string {
 	}
 	return ""
 }
-

@@ -37,7 +37,7 @@ func isTransientError(err error) bool {
 }
 
 type retryModel struct {
-	inner     model.LLM
+	inner      model.LLM
 	maxRetries int
 	delay      time.Duration
 }
@@ -66,10 +66,10 @@ func (r *retryModel) GenerateContent(ctx context.Context, req *model.LLMRequest,
 						Role:  "model",
 						Parts: []*genai.Part{{Text: ""}},
 					},
-					ErrorCode:     "transient_error_exhausted",
-					ErrorMessage:  lastErr.Error(),
-					FinishReason:  genai.FinishReasonStop,
-					TurnComplete:  true,
+					ErrorCode:    "transient_error_exhausted",
+					ErrorMessage: lastErr.Error(),
+					FinishReason: genai.FinishReasonStop,
+					TurnComplete: true,
 				}, nil)
 				return
 			}

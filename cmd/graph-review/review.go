@@ -58,9 +58,9 @@ Subcommands:
 // reviewDiffCmd builds the `review [file]` subcommand.
 func reviewDiffCmd() *cobra.Command {
 	var (
-		mf    modelFlags
-		pf    pipelineFlags
-		repoPath string
+		mf        modelFlags
+		pf        pipelineFlags
+		repoPath  string
 		sessionID string
 	)
 

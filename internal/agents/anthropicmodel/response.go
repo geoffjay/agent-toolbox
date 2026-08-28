@@ -127,9 +127,9 @@ func safeInt32(v int64) int32 {
 
 func convertUsage(usage anthropic.Usage) *genai.GenerateContentResponseUsageMetadata {
 	return &genai.GenerateContentResponseUsageMetadata{
-		PromptTokenCount:       safeInt32(usage.InputTokens),
-		CandidatesTokenCount:   safeInt32(usage.OutputTokens),
-		TotalTokenCount:        safeInt32(usage.InputTokens + usage.OutputTokens),
+		PromptTokenCount:        safeInt32(usage.InputTokens),
+		CandidatesTokenCount:    safeInt32(usage.OutputTokens),
+		TotalTokenCount:         safeInt32(usage.InputTokens + usage.OutputTokens),
 		CachedContentTokenCount: safeInt32(usage.CacheReadInputTokens),
 		PromptTokensDetails: []*genai.ModalityTokenCount{
 			{Modality: genai.MediaModalityText, TokenCount: safeInt32(usage.InputTokens)},

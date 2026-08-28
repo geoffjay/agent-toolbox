@@ -133,39 +133,39 @@ func (m *anthropicModel) generateStream(ctx context.Context, params anthropic.Me
 					lastMessage.StopReason = delta.Delta.StopReason
 					lastMessage.StopSequence = delta.Delta.StopSequence
 					lastMessage.Usage = anthropic.Usage{
-						InputTokens:               delta.Usage.InputTokens,
-						OutputTokens:              delta.Usage.OutputTokens,
-						CacheCreationInputTokens:  delta.Usage.CacheCreationInputTokens,
-						CacheReadInputTokens:      delta.Usage.CacheReadInputTokens,
-						OutputTokensDetails:       delta.Usage.OutputTokensDetails,
-						ServerToolUse:             delta.Usage.ServerToolUse,
+						InputTokens:              delta.Usage.InputTokens,
+						OutputTokens:             delta.Usage.OutputTokens,
+						CacheCreationInputTokens: delta.Usage.CacheCreationInputTokens,
+						CacheReadInputTokens:     delta.Usage.CacheReadInputTokens,
+						OutputTokensDetails:      delta.Usage.OutputTokensDetails,
+						ServerToolUse:            delta.Usage.ServerToolUse,
 					}
 				}
 			}
 
-		genaiResp, err := translator.process(event)
-		if err != nil {
-			yield(nil, err)
-			return
-		}
-		if genaiResp == nil {
-			continue
-		}
-		for resp, err := range aggregator.processResponse(ctx, genaiResp) {
-			if err == nil && lastMessage != nil {
-				attachMetadata(resp, lastMessage)
-			}
-			if !yield(resp, err) {
+			genaiResp, err := translator.process(event)
+			if err != nil {
+				yield(nil, err)
 				return
 			}
+			if genaiResp == nil {
+				continue
+			}
+			for resp, err := range aggregator.processResponse(ctx, genaiResp) {
+				if err == nil && lastMessage != nil {
+					attachMetadata(resp, lastMessage)
+				}
+				if !yield(resp, err) {
+					return
+				}
+			}
 		}
-	}
-	if err := stream.Err(); err != nil {
-		yield(nil, fmt.Errorf("anthropic: stream: %w", err))
-		return
-	}
+		if err := stream.Err(); err != nil {
+			yield(nil, fmt.Errorf("anthropic: stream: %w", err))
+			return
+		}
 
-	if final := aggregator.close(); final != nil {
+		if final := aggregator.close(); final != nil {
 			if lastMessage != nil {
 				attachMetadata(final, lastMessage)
 				final.UsageMetadata = convertUsage(lastMessage.Usage)
@@ -208,9 +208,9 @@ func validateBaseURL(base string) error {
 
 // Errors returned by the provider.
 var (
-	ErrModelNameRequired  = errors.New("anthropic: model name is required")
-	ErrRequestNil         = errors.New("anthropic: request is nil")
-	ErrNoContents         = errors.New("anthropic: LLM request has no contents to convert")
+	ErrModelNameRequired   = errors.New("anthropic: model name is required")
+	ErrRequestNil          = errors.New("anthropic: request is nil")
+	ErrNoContents          = errors.New("anthropic: LLM request has no contents to convert")
 	ErrNoTextOrToolContent = errors.New("anthropic: response output did not contain text or tool content")
 )
 
@@ -450,7 +450,7 @@ func convertFunctionDeclaration(fn *genai.FunctionDeclaration) (*anthropic.ToolP
 	}
 
 	toolParam := &anthropic.ToolParam{
-		Name:       fn.Name,
+		Name: fn.Name,
 		InputSchema: anthropic.ToolInputSchemaParam{
 			Properties: paramsMap,
 		},
