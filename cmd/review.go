@@ -32,6 +32,7 @@ type modelFlags struct {
 	provider  string
 	modelName string
 	apiKey    string
+	authToken string
 	baseURL   string
 }
 
@@ -194,6 +195,7 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 		Provider:  agents.Provider(in.provider),
 		ModelName: in.modelName,
 		APIKey:    in.apiKey,
+		AuthToken: in.authToken,
 		BaseURL:   in.baseURL,
 	})
 	if err != nil {
@@ -435,6 +437,7 @@ func addModelFlags(cmd *cobra.Command, mf *modelFlags) {
 	cmd.Flags().StringVar(&mf.provider, "provider", "", "Model provider: openai or anthropic (env OPENAI_API_KEY/ANTHROPIC_API_KEY)")
 	cmd.Flags().StringVarP(&mf.modelName, "model", "m", "", "Model name (env OPENAI_MODEL or ANTHROPIC_MODEL)")
 	cmd.Flags().StringVar(&mf.apiKey, "api-key", "", "API key for the model endpoint (env OPENAI_API_KEY or ANTHROPIC_API_KEY)")
+	cmd.Flags().StringVar(&mf.authToken, "auth-token", "", "Authorization: Bearer token for the endpoint (Anthropic gateways/proxies; env ANTHROPIC_AUTH_TOKEN)")
 	cmd.Flags().StringVar(&mf.baseURL, "base-url", "", "Base URL for the endpoint (env OPENAI_BASE_URL or ANTHROPIC_BASE_URL)")
 }
 

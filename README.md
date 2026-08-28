@@ -173,7 +173,9 @@ All subcommands share the model flags:
 
 - `--provider` — model provider: `openai` or `anthropic` (auto-detected from env)
 - `-m / --model` — model name (env `OPENAI_MODEL` or `ANTHROPIC_MODEL`)
-- `--api-key` — API key (env `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`)
+- `--api-key` — API key sent as `x-api-key` (env `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`)
+- `--auth-token` — `Authorization: Bearer` token for the Anthropic provider,
+  used by gateways/proxies in front of Anthropic (env `ANTHROPIC_AUTH_TOKEN`)
 - `--base-url` — endpoint URL (env `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL`)
 
 #### OpenAI-compatible providers
@@ -201,6 +203,14 @@ graph-review review diff -m claude-sonnet-4-20250514 --provider anthropic
 The provider is auto-detected: if `ANTHROPIC_API_KEY` is set and
 `OPENAI_API_KEY` is not, `anthropic` is used by default. Set
 `--provider` explicitly to override.
+
+When talking to a gateway or proxy in front of Anthropic (any custom
+`--base-url`/`ANTHROPIC_BASE_URL`), the credential is sent as an
+`Authorization: Bearer` token, since gateways authenticate that way
+rather than with the native `x-api-key` header. Setting `--api-key`
+(or `ANTHROPIC_API_KEY`) alongside a custom base URL is enough — the key
+is reused as the bearer token; use `--auth-token` when the bearer
+credential differs from the API key. Direct Anthropic keeps `x-api-key`.
 
 ## Status
 

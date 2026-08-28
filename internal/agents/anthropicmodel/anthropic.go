@@ -29,8 +29,14 @@ import (
 // ClientConfig configures the Anthropic client. Empty APIKey/BaseURL fall
 // back to ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL env vars (handled by the
 // SDK's default options).
+//
+// APIKey is sent as the x-api-key header (Anthropic's native scheme).
+// AuthToken is sent as an Authorization: Bearer header, which is what
+// gateways and OpenAI-style proxies in front of Anthropic expect. Both
+// may be set; direct Anthropic uses APIKey, gateways use AuthToken.
 type ClientConfig struct {
 	APIKey     string
+	AuthToken  string
 	BaseURL    string
 	HTTPClient *http.Client
 	Options    []option.RequestOption
@@ -54,6 +60,9 @@ func NewModel(_ context.Context, modelName string, cfg *ClientConfig) (model.LLM
 	var opts []option.RequestOption
 	if cfg.APIKey != "" {
 		opts = append(opts, option.WithAPIKey(cfg.APIKey))
+	}
+	if cfg.AuthToken != "" {
+		opts = append(opts, option.WithAuthToken(cfg.AuthToken))
 	}
 	if cfg.BaseURL != "" {
 		if err := validateBaseURL(cfg.BaseURL); err != nil {
@@ -365,16 +374,18 @@ func newMessage(role anthropic.MessageParamRole, parts []*genai.Part) (anthropic
 }
 
 func convertFunctionCallToBlock(fc *genai.FunctionCall) anthropic.ContentBlockParamUnion {
-	args := fc.Args
-	if args == nil {
-		args = map[string]any{}
+	// Input must marshal as a JSON object. Assigning marshaled bytes to the
+	// any-typed Input field would encode them as a base64 string, which the
+	// API rejects ("Input should be an object"), so pass the args map.
+	var input any = fc.Args
+	if fc.Args == nil {
+		input = map[string]any{}
 	}
-	argsJSON, _ := json.Marshal(args)
 	return anthropic.ContentBlockParamUnion{
 		OfToolUse: &anthropic.ToolUseBlockParam{
 			ID:    fc.ID,
 			Name:  fc.Name,
-			Input: argsJSON,
+			Input: input,
 		},
 	}
 }
@@ -459,15 +470,59 @@ func convertFunctionDeclaration(fn *genai.FunctionDeclaration) (*anthropic.ToolP
 	}
 
 	toolParam := &anthropic.ToolParam{
-		Name: fn.Name,
-		InputSchema: anthropic.ToolInputSchemaParam{
-			Properties: paramsMap,
-		},
+		Name:        fn.Name,
+		InputSchema: toolInputSchema(paramsMap),
 	}
 	if fn.Description != "" {
 		toolParam.Description = param.NewOpt(fn.Description)
 	}
 	return toolParam, nil
+}
+
+// toolInputSchema maps a JSON Schema object (the function parameters) onto
+// the Anthropic ToolInputSchemaParam. The SDK's Properties field holds only
+// the property map — not the whole schema — and Required is a separate
+// field; any other top-level keywords (additionalProperties, $defs, etc.)
+// are preserved via ExtraFields. The "type" keyword is dropped because the
+// param always marshals type "object". Anthropic validates this schema
+// against JSON Schema draft 2020-12, so the shape must be exact.
+func toolInputSchema(schema map[string]any) anthropic.ToolInputSchemaParam {
+	in := anthropic.ToolInputSchemaParam{Properties: map[string]any{}}
+	if schema == nil {
+		return in
+	}
+	extra := map[string]any{}
+	for k, v := range schema {
+		switch k {
+		case "type":
+			// Always "object" for tool parameters; the param defaults it.
+		case "properties":
+			in.Properties = v
+		case "required":
+			in.Required = toStringSlice(v)
+		default:
+			extra[k] = v
+		}
+	}
+	if len(extra) > 0 {
+		in.ExtraFields = extra
+	}
+	return in
+}
+
+// toStringSlice converts a decoded JSON array of strings to []string.
+func toStringSlice(v any) []string {
+	items, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if s, ok := item.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func convertToolChoice(toolCfg *genai.ToolConfig) *anthropic.ToolChoiceUnionParam {

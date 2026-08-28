@@ -44,6 +44,12 @@ type ModelConfig struct {
 	// BaseURL for the endpoint. Falls back to OPENAI_BASE_URL or
 	// ANTHROPIC_BASE_URL when empty.
 	BaseURL string
+
+	// AuthToken is an Authorization: Bearer credential. It applies to
+	// the Anthropic provider only and is what gateways/proxies in front
+	// of Anthropic expect (the native API uses APIKey via x-api-key).
+	// Falls back to ANTHROPIC_AUTH_TOKEN when empty.
+	AuthToken string
 }
 
 // NewModel builds the LLM from cfg and the relevant environment variables.
@@ -129,13 +135,42 @@ func newAnthropicModel(ctx context.Context, cfg ModelConfig) (model.LLM, error) 
 		baseURL = os.Getenv("ANTHROPIC_BASE_URL")
 	}
 
+	authToken := cfg.AuthToken
+	if authToken == "" {
+		authToken = os.Getenv("ANTHROPIC_AUTH_TOKEN")
+	}
+	authToken = resolveAnthropicAuthToken(authToken, baseURL, apiKey)
+
 	m, err := anthropicmodel.NewModel(ctx, name, &anthropicmodel.ClientConfig{
-		APIKey:  apiKey,
-		BaseURL: baseURL,
+		APIKey:    apiKey,
+		AuthToken: authToken,
+		BaseURL:   baseURL,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create anthropic model: %w", err)
 	}
-	slog.Info("model built", "provider", "anthropic", "model", name, "base_url", baseURL, "api_key", redactedKey(apiKey))
+	slog.Info("model built",
+		"provider", "anthropic",
+		"model", name,
+		"base_url", baseURL,
+		"api_key", redactedKey(apiKey),
+		"auth_token", redactedKey(authToken))
 	return wrapWithRetry(m), nil
+}
+
+// resolveAnthropicAuthToken decides the Authorization: Bearer token for
+// the Anthropic client. Gateways and proxies in front of Anthropic (any
+// custom base URL) authenticate with a bearer token rather than the
+// native x-api-key header, so when the user points at a custom endpoint
+// with only an API key, that key is reused as the bearer token. Direct
+// Anthropic (empty/default base URL) keeps x-api-key only and returns the
+// token unchanged.
+func resolveAnthropicAuthToken(authToken, baseURL, apiKey string) string {
+	if authToken != "" {
+		return authToken
+	}
+	if baseURL != "" && apiKey != "" {
+		return apiKey
+	}
+	return authToken
 }
