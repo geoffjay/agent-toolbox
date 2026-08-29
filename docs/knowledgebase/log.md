@@ -15,3 +15,13 @@
   runs resume midway without re-paying for completed agents; verified the
   ADK rehydration path (`ReconstructRunState` scans session history, no
   checkpoint format needed) before designing.
+
+## 2026-08-29
+* **Plan (retroactive)**: Added `plans/tui-presentation.md` — the bubbletea
+  terminal interface plan, written after the fact from the original UI
+  request. Records requirement→implementation mapping, design decisions,
+  deviations (charm.land import paths, always-on `debug.log` in TUI mode,
+  `--plain` flag), open improvement opportunities, and the two pre-existing
+  pipeline issues the E2E runs surfaced (`--no-tools` stall; large diffs
+  not reaching reviewers). Implementation lives in commits `5fd2e40` +
+  `82d6508`.

@@ -56,11 +56,22 @@ to touch the KB on every edit.
 
 ## Patterns
 
-* _(empty — add pattern docs here)_
+* [ADK HITL gates](patterns/adk-hitl-gates.md) — request-input interrupt,
+  re-run-on-resume, conditional-cycle loop-back pattern used by the
+  findings gate.
 
 ## Plans
 
-* _(empty — add plan docs here)_
+* [Human-in-the-loop gates in the review graph](plans/hitl-gates.md) —
+  approval nodes in the ADK workflow graph; findings gate with
+  decline-with-feedback loop-back built first.
+* [Resumable runs via a persisted run file](plans/resumable-runs.md) —
+  file-backed ADK session service plus a run manifest so failed or
+  gate-paused runs resume midway.
+* [Bubbletea terminal interface for review runs](plans/tui-presentation.md) —
+  charm-stack TUI (bubbletea, bubbles, huh, lipgloss, glamour) with a
+  plain fallback surface; built, with deviations and open improvements
+  marked for review.
 
 ## References
 
