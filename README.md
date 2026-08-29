@@ -130,7 +130,11 @@ repo-inspection tools have code to look at. Flags:
 - `--github-token` — GitHub API token (defaults to `GITHUB_TOKEN`)
 - `--no-clone` — skip the clone; tools fall back to the working directory
 - `--clone-repo <path>` — use an existing local checkout instead of cloning
-- `--no-tools` — disable all tools on the reviewer agents
+- `--findings-gate` — pause after the reviewers finish and require a human
+  decision on the findings before the summary runs. `approve` continues,
+  `revise` loops the reviewers back with your feedback (up to 3 rounds),
+  `abort` fails the run. Requires an interactive terminal; non-interactive
+  input fails closed.
 - `--post-comments` — post the review summary as a GitHub PR review with
   inline comments anchored to the file/line references in the findings
   (requires `--github-token`). Before anything is submitted, the full
