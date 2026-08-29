@@ -17,6 +17,7 @@ import (
 	"github.com/geoffjay/graph-review/internal/github"
 	"github.com/geoffjay/graph-review/internal/review"
 	"github.com/geoffjay/graph-review/internal/tools"
+	"github.com/geoffjay/graph-review/internal/ui"
 )
 
 // reviewPRCmd builds the `review pr <owner/repo> <number>` subcommand.
@@ -35,6 +36,7 @@ func reviewPRCmd() *cobra.Command {
 		cloneRepo    string
 		postComments bool
 		assumeYes    bool
+		plain        bool
 	)
 
 	cmd := &cobra.Command{
@@ -55,12 +57,14 @@ beyond the diff hunks. Use --no-clone to skip the clone (tools then fall
 back to the working directory) or --clone-repo to point at an existing
 local checkout.
 
-Submitting a review with --post-comments first shows the full review body
-and inline comments and asks for confirmation on the terminal; nothing is
-posted unless you approve. Pass --assume-yes to post unattended (CI).`,
+Submitting a review with --post-comments first shows the review and
+inline comments and asks for confirmation; nothing is posted unless you
+approve. Pass --assume-yes to post unattended (CI).
+
+Progress is shown in a terminal interface when stdout is a terminal;
+pass --plain for the classic streaming output.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			configureLogging(lf)
 			ctx := cmd.Context()
 
 			ref, err := github.ParseRepoRef(args[0])
@@ -78,88 +82,22 @@ posted unless you approve. Pass --assume-yes to post unattended (CI).`,
 
 			client := github.NewClient(githubToken)
 
-			fmt.Fprintln(os.Stderr, "fetching PR", ref.String()+"#"+args[1])
-			pr, err := client.GetPR(ctx, ref, number)
-			if err != nil {
-				return fmt.Errorf("fetch PR: %w", err)
+			work := func(ctx context.Context, p Presenter) error {
+				return reviewPR(ctx, client, ref, number, runPipelineInput{
+					modelFlags:    mf,
+					pipelineFlags: pf,
+					sessionID:     sessionID,
+					noClone:       noClone,
+				}, cloneRepo, postComments, assumeYes, p)
 			}
-
-			diff, err := client.GetDiff(ctx, ref, number)
-			if err != nil {
-				return fmt.Errorf("fetch PR diff: %w", err)
-			}
-			if strings.TrimSpace(diff) == "" {
-				return fmt.Errorf("PR %s#%d has no diff", ref, number)
-			}
-
-			state := map[string]any{
-				tools.PRRefStateKey: fmt.Sprintf("%s#%d", ref, number),
-			}
-
-			// Resolve a repo root for the repo-inspection tools.
-			var repoRoot string
-			switch {
-			case noClone:
-				// Tools fall back to the working directory.
-				repoRoot, _ = os.Getwd()
-			case cloneRepo != "":
-				abs, err := filepath.Abs(cloneRepo)
-				if err != nil {
-					return fmt.Errorf("resolve clone path: %w", err)
-				}
-				repoRoot = abs
-			default:
-				shortSHA := pr.Head.SHA
-				if len(shortSHA) > 7 {
-					shortSHA = shortSHA[:7]
-				}
-				fmt.Fprintln(os.Stderr, "cloning", pr.Head.Repo.FullName, "at", shortSHA)
-				dir, cleanup, err := client.CloneRepo(ctx, pr)
-				if err != nil {
-					return fmt.Errorf("clone PR repo: %w", err)
-				}
-				defer cleanup()
-				repoRoot = dir
-			}
-			if !noClone {
-				state[tools.RepoPathStateKey] = repoRoot
-			}
-
-			label := fmt.Sprintf("reviewing PR %s#%d (%d bytes) with model %s",
-				ref, number, len(diff), mf.modelName)
-			if pr.Title != "" {
-				label = fmt.Sprintf("reviewing PR %s#%d %q (%d bytes) with model %s",
-					ref, number, pr.Title, len(diff), mf.modelName)
-			}
-
-			report, err := runPipeline(ctx, runPipelineInput{
-				modelFlags:    mf,
-				pipelineFlags: pf,
-				loggingFlags:  lf,
-				diff:          diff,
-				sessionID:     sessionID,
-				state:         state,
-				label:         label,
-				repoRoot:      repoRoot,
-				noClone:       noClone,
-			})
-			if err != nil {
-				return err
-			}
-
-			if postComments {
-				if err := postReview(ctx, client, ref, number, report, assumeYes); err != nil {
-					return err
-				}
-			}
-
-			return nil
+			return dispatch(ctx, lf, plain, work)
 		},
 	}
 
 	addModelFlags(cmd, &mf)
 	addLoggingFlags(cmd, &lf)
 	addPipelineFlags(cmd, &pf)
+	addUIFlags(cmd, &plain)
 	cmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub API token (env GITHUB_TOKEN)")
 	cmd.Flags().StringVar(&sessionID, "session", "", "Session ID for the runner (random by default)")
 	cmd.Flags().BoolVar(&noClone, "no-clone", false, "Do not clone the PR repo; tools fall back to the working directory")
@@ -169,26 +107,82 @@ posted unless you approve. Pass --assume-yes to post unattended (CI).`,
 	return cmd
 }
 
-// confirmPost shows the exact review that would be submitted and requires
-// explicit human approval before posting. With assumeYes it skips the
-// prompt (for CI). When stdin is not an interactive terminal and assumeYes
-// is not set, it fails closed rather than posting unattended.
-func confirmPost(req *github.PostReviewRequest, ref github.RepoRef, number int, assumeYes bool) (bool, error) {
-	fmt.Fprintf(os.Stderr, "review to submit to %s#%d\n", ref, number)
-	fmt.Fprintf(os.Stderr, "  event: %s (%d inline comment(s))\n", req.Event, len(req.Comments))
-	fmt.Fprintln(os.Stderr, "  body:")
-	fmt.Fprintln(os.Stderr, req.Body)
-	for i, c := range req.Comments {
-		fmt.Fprintf(os.Stderr, "  comment %d — %s:%d:\n%s\n", i+1, c.Path, c.Line, c.Body)
+// readApproval prompts on out and reads a yes/no answer from in. Any
+
+// reviewPR fetches the PR (and clones the repo when needed), runs the
+// pipeline over its diff, presents the report, and optionally posts it
+// as a GitHub review after human confirmation.
+func reviewPR(ctx context.Context, client *github.Client, ref github.RepoRef, number int, in runPipelineInput, cloneRepo string, postComments, assumeYes bool, p Presenter) error {
+	p.Activity(fmt.Sprintf("fetching PR %s#%d", ref, number))
+	pr, err := client.GetPR(ctx, ref, number)
+	if err != nil {
+		return fmt.Errorf("fetch PR: %w", err)
 	}
-	if assumeYes {
-		return true, nil
+
+	diff, err := client.GetDiff(ctx, ref, number)
+	if err != nil {
+		return fmt.Errorf("fetch PR diff: %w", err)
 	}
-	stat, err := os.Stdin.Stat()
-	if err != nil || stat.Mode()&os.ModeCharDevice == 0 {
-		return false, fmt.Errorf("cannot prompt for approval: stdin is not a terminal; re-run interactively or pass --assume-yes")
+	if strings.TrimSpace(diff) == "" {
+		return fmt.Errorf("PR %s#%d has no diff", ref, number)
 	}
-	return readApproval(os.Stdin, os.Stderr)
+
+	state := map[string]any{
+		tools.PRRefStateKey: fmt.Sprintf("%s#%d", ref, number),
+	}
+
+	// Resolve a repo root for the repo-inspection tools.
+	repoRoot := in.repoRoot
+	switch {
+	case in.noClone:
+		// Tools fall back to the working directory.
+		repoRoot, _ = os.Getwd()
+	case cloneRepo != "":
+		abs, err := filepath.Abs(cloneRepo)
+		if err != nil {
+			return fmt.Errorf("resolve clone path: %w", err)
+		}
+		repoRoot = abs
+	default:
+		shortSHA := pr.Head.SHA
+		if len(shortSHA) > 7 {
+			shortSHA = shortSHA[:7]
+		}
+		p.Activity(fmt.Sprintf("cloning %s at %s", pr.Head.Repo.FullName, shortSHA))
+		dir, cleanup, err := client.CloneRepo(ctx, pr)
+		if err != nil {
+			return fmt.Errorf("clone PR repo: %w", err)
+		}
+		defer cleanup()
+		repoRoot = dir
+	}
+	if !in.noClone {
+		state[tools.RepoPathStateKey] = repoRoot
+	}
+
+	label := fmt.Sprintf("reviewing PR %s#%d (%d bytes) with model %s",
+		ref, number, len(diff), in.modelName)
+	if pr.Title != "" {
+		label = fmt.Sprintf("reviewing PR %s#%d %q (%d bytes) with model %s",
+			ref, number, pr.Title, len(diff), in.modelName)
+	}
+	in.diff = diff
+	in.state = state
+	in.label = label
+	in.repoRoot = repoRoot
+
+	report, err := runPipeline(ctx, in, p)
+	if err != nil {
+		return err
+	}
+	p.Finish(report)
+
+	if postComments {
+		if err := postReview(ctx, client, ref, number, report, assumeYes, p); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // readApproval prompts on out and reads a yes/no answer from in. Any
@@ -213,9 +207,9 @@ func readApproval(in io.Reader, out io.Writer) (bool, error) {
 // (dropping any whose file or line cannot be anchored), prompts for human
 // confirmation, and posts the review. If the PR file list cannot be
 // fetched it warns and does not post anything.
-func postReview(ctx context.Context, client *github.Client, ref github.RepoRef, number int, report string, assumeYes bool) error {
+func postReview(ctx context.Context, client *github.Client, ref github.RepoRef, number int, report string, assumeYes bool, p Presenter) error {
 	if strings.TrimSpace(report) == "" {
-		fmt.Fprintln(os.Stderr, "no review output to post")
+		p.Note("no review output to post")
 		return nil
 	}
 	findings := review.ParseFindings(report)
@@ -223,28 +217,32 @@ func postReview(ctx context.Context, client *github.Client, ref github.RepoRef, 
 	// would reject the whole review over them.
 	files, err := client.ListFiles(ctx, ref, number)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "warning: could not list PR files; not posting the review:", err)
+		p.Warn(fmt.Sprintf("warning: could not list PR files; not posting the review: %v", err))
 		return nil
 	}
 	before := len(findings)
 	findings = review.FilterByFiles(findings, files)
 	if dropped := before - len(findings); dropped > 0 {
-		fmt.Fprintf(os.Stderr, "dropping %d finding(s) whose file is not part of the PR diff\n", dropped)
+		p.Warn(fmt.Sprintf("dropping %d finding(s) whose file is not part of the PR diff", dropped))
 	}
 	before = len(findings)
 	findings = review.FilterByDiffLines(findings, files)
 	if dropped := before - len(findings); dropped > 0 {
-		fmt.Fprintf(os.Stderr, "dropping %d finding(s) whose line is not part of the PR diff hunks\n", dropped)
+		p.Warn(fmt.Sprintf("dropping %d finding(s) whose line is not part of the PR diff hunks", dropped))
 	}
 	req := review.BuildReviewRequest(report, findings)
-	confirmed, err := confirmPost(req, ref, number, assumeYes)
-	if err != nil {
-		return err
+	confirmed := assumeYes
+	if !confirmed {
+		confirmed, err = p.Confirm(postConfirmation(ref, number, req))
+		if err != nil {
+			return err
+		}
 	}
 	if !confirmed {
-		fmt.Fprintln(os.Stderr, "review not posted")
+		p.Note("review not posted")
 		return nil
 	}
+	p.Activity("posting review to GitHub")
 	resp, err := client.PostReview(ctx, ref, number, req)
 	if err != nil {
 		// A residual anchor rejection (422 "Line could not be
@@ -252,7 +250,7 @@ func postReview(ctx context.Context, client *github.Client, ref github.RepoRef, 
 		// post the body without inline comments rather than fail.
 		var apiErr *github.APIError
 		if errors.As(err, &apiErr) && apiErr.Status == http.StatusUnprocessableEntity && len(req.Comments) > 0 {
-			fmt.Fprintln(os.Stderr, "warning: GitHub rejected an inline comment anchor; posting the review without inline comments")
+			p.Warn("warning: GitHub rejected an inline comment anchor; posting the review without inline comments")
 			req.Comments = nil
 			resp, err = client.PostReview(ctx, ref, number, req)
 		}
@@ -260,6 +258,25 @@ func postReview(ctx context.Context, client *github.Client, ref github.RepoRef, 
 	if err != nil {
 		return fmt.Errorf("post review: %w", err)
 	}
-	fmt.Fprintf(os.Stderr, "review posted: %s\n", resp.HTMLURL)
+	p.Note(fmt.Sprintf("review posted: %s", resp.HTMLURL))
 	return nil
+}
+
+// postConfirmation builds the confirmation shown before a review is
+// submitted to GitHub.
+func postConfirmation(ref github.RepoRef, number int, req *github.PostReviewRequest) ui.Confirmation {
+	var b strings.Builder
+	fmt.Fprintf(&b, "event: %s", req.Event)
+	if len(req.Comments) == 1 {
+		b.WriteString(" (1 inline comment)")
+	} else {
+		fmt.Fprintf(&b, " (%d inline comments)", len(req.Comments))
+	}
+	for i, c := range req.Comments {
+		fmt.Fprintf(&b, "\n  comment %d — %s:%d", i+1, c.Path, c.Line)
+	}
+	return ui.Confirmation{
+		Title:  fmt.Sprintf("post this review to %s#%d?", ref, number),
+		Detail: b.String(),
+	}
 }

@@ -42,12 +42,12 @@ tasks:
       - go fix ./...
 
   install:
-    desc: Install gag locally
+    desc: Install gat locally
     cmds:
       - go install -v .
 
   run:
-    desc: Run gag
+    desc: Run gat
     cmds:
       - go run .
 

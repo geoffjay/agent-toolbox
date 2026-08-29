@@ -4,18 +4,17 @@ import (
 	"strings"
 	"testing"
 
-	"google.golang.org/adk/v2/session"
 	"google.golang.org/adk/v2/workflow"
 	"google.golang.org/genai"
 
 	"github.com/geoffjay/graph-review/internal/agents"
+	"github.com/geoffjay/graph-review/internal/ui"
 )
 
 func TestPromptGateAnswer(t *testing.T) {
-	req := &session.RequestInput{
-		InterruptID: "findings_gate-test",
-		Message:     "Approve the reviewer findings?",
-		Payload:     "- `a.go:1` [nit] finding",
+	req := ui.GateRequest{
+		Message: "Approve the reviewer findings?",
+		Payload: "- `a.go:1` [nit] finding",
 	}
 
 	tests := []struct {

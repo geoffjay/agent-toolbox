@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/geoffjay/graph-review/internal/github"
+	"github.com/geoffjay/graph-review/internal/ui"
 )
 
 // TestConfirmPostInteractivePTY exercises the human-approval gate on a real
@@ -25,19 +25,15 @@ func TestConfirmPostInteractivePTY(t *testing.T) {
 		t.Skip("stdin is not a terminal")
 	}
 
-	req := &github.PostReviewRequest{
-		Body:  "unit-test review body",
-		Event: "COMMENT",
-		Comments: []github.ReviewComment{
-			{Path: "a.go", Line: 1, Body: "nit: comment body"},
-		},
-	}
-	ok, err := confirmPost(req, github.RepoRef{Owner: "geoffjay", Repo: "graph-review"}, 42, false)
+	ok, err := plainPresenter{}.Confirm(ui.Confirmation{
+		Title:  "post this review to geoffjay/graph-review#42?",
+		Detail: "event: COMMENT (1 inline comment)\n  comment 1 — a.go:1",
+	})
 	if err != nil {
-		t.Fatalf("confirmPost() error = %v", err)
+		t.Fatalf("Confirm() error = %v", err)
 	}
 	want := ptyExpect == "approve"
 	if ok != want {
-		t.Errorf("confirmPost() = %v, want %v (PTY_EXPECT=%q)", ok, want, ptyExpect)
+		t.Errorf("Confirm() = %v, want %v (PTY_EXPECT=%q)", ok, want, ptyExpect)
 	}
 }
