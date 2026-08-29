@@ -1,6 +1,7 @@
 package review
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/geoffjay/graph-review/internal/github"
@@ -71,5 +72,30 @@ func TestFilterByDiffLinesRepro422(t *testing.T) {
 	got := FilterByDiffLines(findings, files)
 	if len(got) != 1 || got[0].Body != "anchorable" {
 		t.Fatalf("FilterByDiffLines = %+v, want only the anchorable finding", got)
+	}
+}
+
+// TestPatchHunksBounded verifies patchHunks caps its work at maxPatchLines
+// so a hostile or pathologically large PR patch cannot force an unbounded
+// scan or per-line map. Lines within the cap parse normally; anchors past
+// the cap are not resolved (dropped by the caller rather than parsed).
+func TestPatchHunksBounded(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("@@ -1,1 +1,1 @@\n")
+	// One added line per row, far exceeding the cap. After maxPatchLines
+	// scanned rows, parsing stops.
+	for range maxPatchLines + 1000 {
+		b.WriteString("+x\n")
+	}
+	hunks := patchHunks(b.String())
+	if len(hunks) != 1 {
+		t.Fatalf("patchHunks returned %d hunks, want 1", len(hunks))
+	}
+	if got := len(hunks[0].lines); got > maxPatchLines {
+		t.Fatalf("hunk holds %d lines, want <= maxPatchLines (%d)", got, maxPatchLines)
+	}
+	// A line well past the cap must not resolve.
+	if hunks[0].contains(maxPatchLines + 500) {
+		t.Fatal("line past maxPatchLines resolved, want unresolved")
 	}
 }

@@ -32,13 +32,27 @@ func (h diffHunk) containsRange(a, b int) bool {
 	return h.lines[a] && h.lines[b]
 }
 
+// maxPatchLines bounds patchHunks against a hostile or pathologically
+// large PR patch: the per-file patch text comes from the GitHub API and
+// is not size-limited by the fetcher, so parsing stops once this many
+// lines have been scanned. The cap sits well beyond any realistic
+// reviewable diff, so legitimate anchors are never dropped, while an
+// attacker cannot force an unbounded scan or an unbounded per-line map.
+const maxPatchLines = 50_000
+
 // patchHunks parses a unified diff patch into its anchorable hunks.
 // Lines outside any hunk (file headers, index lines) are ignored.
 func patchHunks(patch string) []diffHunk {
 	var hunks []diffHunk
 	var cur *diffHunk
 	line := 0
-	for _, raw := range strings.Split(patch, "\n") {
+	// SplitSeq streams the patch line by line instead of allocating a
+	// slice of every line up front, and scanned caps the total work.
+	scanned := 0
+	for raw := range strings.SplitSeq(patch, "\n") {
+		if scanned++; scanned > maxPatchLines {
+			break
+		}
 		if m := hunkHeaderRe.FindStringSubmatch(raw); m != nil {
 			start, _ := strconv.Atoi(m[1])
 			hunks = append(hunks, diffHunk{lines: map[int]bool{}})

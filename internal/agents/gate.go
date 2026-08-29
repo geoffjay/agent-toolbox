@@ -145,6 +145,12 @@ func bumpRevisions(ctx agent.Context) (int, error) {
 // original review request (which carries the diff), the prior findings,
 // and the human's feedback, clearly delimited so the reviewers — whose
 // instructions assume they receive a unified diff — keep their structure.
+//
+// The human feedback and prior findings are concatenated directly into
+// the reviewer LLM prompt, a prompt-injection surface. This is safe only
+// because both inputs are operator-trusted: feedback is typed by the
+// local operator at the interactive gate, and findings are produced by
+// this pipeline's own reviewers. Do not reuse this with untrusted input.
 func RevisePrompt(userMessage, findings, feedback string) string {
 	var b strings.Builder
 	b.WriteString(userMessage)
