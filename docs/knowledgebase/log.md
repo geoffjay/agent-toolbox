@@ -10,3 +10,8 @@
   `--findings-gate` flag, pause/resume in `cmd/review.go` `runPipeline`;
   recorded the HITL gate/loop-back pattern in
   `patterns/adk-hitl-gates.md`.
+* **Plan**: Added `plans/resumable-runs.md` — persist review runs as JSON
+  (file-backed session service + run manifest) so failed or gate-paused
+  runs resume midway without re-paying for completed agents; verified the
+  ADK rehydration path (`ReconstructRunState` scans session history, no
+  checkpoint format needed) before designing.
