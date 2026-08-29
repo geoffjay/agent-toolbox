@@ -132,6 +132,7 @@ posted unless you approve. Pass --assume-yes to post unattended (CI).`,
 			report, err := runPipeline(ctx, runPipelineInput{
 				modelFlags:    mf,
 				pipelineFlags: pf,
+				loggingFlags:  lf,
 				diff:          diff,
 				sessionID:     sessionID,
 				state:         state,

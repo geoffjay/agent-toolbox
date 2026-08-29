@@ -157,6 +157,7 @@ at --repo (default: working directory). Use --no-tools to disable them.`,
 			_, err = runPipeline(ctx, runPipelineInput{
 				modelFlags:    mf,
 				pipelineFlags: pf,
+				loggingFlags:  lf,
 				diff:          diff,
 				sessionID:     sessionID,
 				state:         state,
@@ -315,8 +316,15 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 						continue
 					}
 					slog.Debug("agent text", "agent", ev.Author, "text", debugSnippet(part.Text))
-					fmt.Print(part.Text)
-					if ev.Author == agents.SummaryAgentName {
+					isSummary := ev.Author == agents.SummaryAgentName
+					// The summary agent produces the final report and is
+					// always shown. Intermediate reviewer output (which
+					// echoes diff hunks in its line-by-line analysis) is
+					// noise by default and streams only under -v/--debug.
+					if isSummary || in.level() <= slog.LevelInfo {
+						fmt.Print(part.Text)
+					}
+					if isSummary {
 						output.WriteString(part.Text)
 					}
 				}
