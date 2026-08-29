@@ -255,8 +255,7 @@ func runGit(dir string, args ...string) (string, error) {
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
+		if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 			return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(string(ee.Stderr)))
 		}
 		return "", err

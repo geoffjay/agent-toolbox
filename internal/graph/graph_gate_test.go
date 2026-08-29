@@ -84,7 +84,7 @@ func contentText(c *genai.Content) string {
 // summary prompt (FormatFindings emits labeled sections per reviewer).
 func extractScriptedFindings(prompt string) string {
 	var lines []string
-	for _, line := range strings.Split(prompt, "\n") {
+	for line := range strings.SplitSeq(prompt, "\n") {
 		if strings.HasPrefix(line, "- `") {
 			lines = append(lines, line)
 		}

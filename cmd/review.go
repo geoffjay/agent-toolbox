@@ -540,7 +540,7 @@ func warnShallowReview(report, diff string) bool {
 
 func countDiffLines(diff string) int {
 	count := 0
-	for _, line := range strings.Split(diff, "\n") {
+	for line := range strings.SplitSeq(diff, "\n") {
 		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
 			count++
 		} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
