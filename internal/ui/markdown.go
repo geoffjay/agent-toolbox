@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"charm.land/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
 )
 

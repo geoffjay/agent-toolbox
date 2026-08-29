@@ -9,3 +9,8 @@ profile.cov
 
 # build
 bin/
+build/
+dist/
+
+# log
+*.log
