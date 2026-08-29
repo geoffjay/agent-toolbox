@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -160,21 +162,37 @@ posted unless you approve. Pass --assume-yes to post unattended (CI).`,
 					if dropped := before - len(findings); dropped > 0 {
 						fmt.Fprintf(os.Stderr, "dropping %d finding(s) whose file is not part of the PR diff\n", dropped)
 					}
+					before = len(findings)
+					findings = review.FilterByDiffLines(findings, files)
+					if dropped := before - len(findings); dropped > 0 {
+						fmt.Fprintf(os.Stderr, "dropping %d finding(s) whose line is not part of the PR diff hunks\n", dropped)
+					}
+					req := review.BuildReviewRequest(report, findings)
+					confirmed, err := confirmPost(req, ref, number, assumeYes)
+					if err != nil {
+						return err
+					}
+					if !confirmed {
+						fmt.Fprintln(os.Stderr, "review not posted")
+						return nil
+					}
+					resp, err := client.PostReview(ctx, ref, number, req)
+					if err != nil {
+						// A residual anchor rejection (422 "Line could not be
+						// resolved") should not lose the human-approved review:
+						// post the body without inline comments rather than fail.
+						var apiErr *github.APIError
+						if errors.As(err, &apiErr) && apiErr.Status == http.StatusUnprocessableEntity && len(req.Comments) > 0 {
+							fmt.Fprintln(os.Stderr, "warning: GitHub rejected an inline comment anchor; posting the review without inline comments")
+							req.Comments = nil
+							resp, err = client.PostReview(ctx, ref, number, req)
+						}
+					}
+					if err != nil {
+						return fmt.Errorf("post review: %w", err)
+					}
+					fmt.Fprintf(os.Stderr, "review posted: %s\n", resp.HTMLURL)
 				}
-				req := review.BuildReviewRequest(report, findings)
-				confirmed, err := confirmPost(req, ref, number, assumeYes)
-				if err != nil {
-					return err
-				}
-				if !confirmed {
-					fmt.Fprintln(os.Stderr, "review not posted")
-					return nil
-				}
-				resp, err := client.PostReview(ctx, ref, number, req)
-				if err != nil {
-					return fmt.Errorf("post review: %w", err)
-				}
-				fmt.Fprintf(os.Stderr, "review posted: %s\n", resp.HTMLURL)
 			}
 
 			return nil

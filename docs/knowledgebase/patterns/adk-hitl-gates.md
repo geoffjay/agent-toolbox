@@ -54,3 +54,13 @@ the gate (a second approval round per revision, by construction).
   rather than approving).
 - Session state values may round-trip JSON (`float64`), so counters
   read via `State().Get` should normalize `int`/`int64`/`float64`.
+
+## Posting gates' findings to GitHub
+
+Inline review comments must anchor to RIGHT-side lines *inside the file's
+diff hunks* (context or added lines; both endpoints of a range must fall
+in the same hunk). A finding citing a file that is in the PR but a line
+outside the hunks fails the whole POST with 422 "Line could not be
+resolved" — validate anchors with `review.FilterByDiffLines` before
+posting, and degrade to a body-only review if GitHub still rejects (the
+report body carries all findings anyway).
