@@ -59,7 +59,7 @@ func convertResponse(resp *anthropic.Message) (*genai.GenerateContentResponse, e
 				FinishReason: finishReason(resp.StopReason),
 			},
 		},
-		ModelVersion:  string(resp.Model),
+		ModelVersion:  resp.Model,
 		ResponseID:    resp.ID,
 		UsageMetadata: convertUsage(resp.Usage),
 	}, nil
@@ -121,6 +121,11 @@ func finishReason(reason anthropic.StopReason) genai.FinishReason {
 func safeInt32(v int64) int32 {
 	if v > math.MaxInt32 {
 		return math.MaxInt32
+	}
+	if v < 0 {
+		// Token counts are never negative; clamp defensively instead
+		// of letting the conversion wrap around.
+		return 0
 	}
 	return int32(v)
 }

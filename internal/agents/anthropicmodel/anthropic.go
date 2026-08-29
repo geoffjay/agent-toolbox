@@ -99,7 +99,7 @@ func (m *anthropicModel) GenerateContent(ctx context.Context, req *model.LLMRequ
 // debugLog logs only when GRAPH_REVIEW_DEBUG is set; the model emits a
 // line per response block, which would otherwise flood stderr on every
 // run.
-func debugLog(format string, args ...any) {
+func debugLogf(format string, args ...any) {
 	if os.Getenv("GRAPH_REVIEW_DEBUG") == "" {
 		return
 	}
@@ -110,18 +110,18 @@ func (m *anthropicModel) generate(ctx context.Context, params anthropic.MessageN
 	return func(yield func(*model.LLMResponse, error) bool) {
 		resp, err := m.client.Messages.New(ctx, params)
 		if err != nil {
-			debugLog("API call failed: %v", err)
+			debugLogf("API call failed: %v", err)
 			yield(nil, fmt.Errorf("anthropic: call failed: %w", err))
 			return
 		}
-		debugLog("response: stop_reason=%s, %d content blocks, model=%s, input_tokens=%d, output_tokens=%d",
+		debugLogf("response: stop_reason=%s, %d content blocks, model=%s, input_tokens=%d, output_tokens=%d",
 			resp.StopReason, len(resp.Content), resp.Model, resp.Usage.InputTokens, resp.Usage.OutputTokens)
 		for i, block := range resp.Content {
-			debugLog("block[%d]: type=%s, text_len=%d, tool_use=%v", i, block.Type, len(block.Text), block.Type == "tool_use")
+			debugLogf("block[%d]: type=%s, text_len=%d, tool_use=%v", i, block.Type, len(block.Text), block.Type == "tool_use")
 		}
 		genaiResp, err := convertResponse(resp)
 		if err != nil {
-			debugLog("convertResponse error: %v", err)
+			debugLogf("convertResponse error: %v", err)
 			yield(nil, err)
 			return
 		}
@@ -206,7 +206,7 @@ func attachMetadata(resp *model.LLMResponse, msg *anthropic.Message) {
 		resp.CustomMetadata = map[string]any{}
 	}
 	resp.CustomMetadata["anthropic_message_id"] = msg.ID
-	resp.CustomMetadata["anthropic_model"] = string(msg.Model)
+	resp.CustomMetadata["anthropic_model"] = msg.Model
 }
 
 func singleErrorSequence(err error) iter.Seq2[*model.LLMResponse, error] {
@@ -237,40 +237,24 @@ var (
 // buildParams converts a generic LLMRequest into Anthropic MessageNewParams.
 func buildParams(modelName string, req *model.LLMRequest) (anthropic.MessageNewParams, error) {
 	params := anthropic.MessageNewParams{
-		Model:     anthropic.Model(modelName),
+		Model:     modelName,
 		MaxTokens: 8192,
 	}
 	if req.Model != "" {
-		params.Model = anthropic.Model(req.Model)
+		params.Model = req.Model
 	}
 
 	system, messages, err := convertContents(req.Contents)
 	if err != nil {
-		debugLog("convertContents error: %v", err)
+		debugLogf("convertContents error: %v", err)
 		return anthropic.MessageNewParams{}, err
 	}
 
 	// The ADK passes the agent instruction as Config.SystemInstruction,
 	// not as a content message with role "system".
-	if req.Config != nil && req.Config.SystemInstruction != nil {
-		var sb strings.Builder
-		for _, part := range req.Config.SystemInstruction.Parts {
-			if part != nil && part.Text != "" {
-				sb.WriteString(part.Text)
-				sb.WriteString("\n")
-			}
-		}
-		si := strings.TrimSpace(sb.String())
-		if si != "" {
-			if system != "" {
-				system = si + "\n\n" + system
-			} else {
-				system = si
-			}
-		}
-	}
+	system = mergeSystemInstruction(system, req)
 	if len(messages) == 0 {
-		debugLog("no messages to send")
+		debugLogf("no messages to send")
 		return anthropic.MessageNewParams{}, ErrNoContents
 	}
 	params.Messages = messages
@@ -278,20 +262,20 @@ func buildParams(modelName string, req *model.LLMRequest) (anthropic.MessageNewP
 		params.System = []anthropic.TextBlockParam{{Text: system}}
 	}
 	if err := applyGenerationConfig(&params, req.Config); err != nil {
-		debugLog("applyGenerationConfig error: %v", err)
+		debugLogf("applyGenerationConfig error: %v", err)
 		return anthropic.MessageNewParams{}, err
 	}
 
 	tools, err := convertTools(req.Config)
 	if err != nil {
-		debugLog("convertTools error: %v", err)
+		debugLogf("convertTools error: %v", err)
 		return anthropic.MessageNewParams{}, err
 	}
 	if len(tools) > 0 {
 		params.Tools = tools
-		debugLog("sending %d tools, %d messages, system_len=%d", len(tools), len(messages), len(system))
+		debugLogf("sending %d tools, %d messages, system_len=%d", len(tools), len(messages), len(system))
 	} else {
-		debugLog("sending 0 tools, %d messages, system_len=%d", len(messages), len(system))
+		debugLogf("sending 0 tools, %d messages, system_len=%d", len(messages), len(system))
 	}
 
 	if cfg := req.Config; cfg != nil && cfg.ToolConfig != nil {
@@ -302,6 +286,32 @@ func buildParams(modelName string, req *model.LLMRequest) (anthropic.MessageNewP
 	}
 
 	return params, nil
+}
+
+// mergeSystemInstruction prepends the ADK agent instruction (passed as
+// Config.SystemInstruction rather than as a "system"-role content message)
+// to any system content extracted from the request, so the effective
+// system prompt keeps both. The instruction leads because it defines the
+// reviewer's role.
+func mergeSystemInstruction(system string, req *model.LLMRequest) string {
+	if req.Config == nil || req.Config.SystemInstruction == nil {
+		return system
+	}
+	var sb strings.Builder
+	for _, part := range req.Config.SystemInstruction.Parts {
+		if part != nil && part.Text != "" {
+			sb.WriteString(part.Text)
+			sb.WriteString("\n")
+		}
+	}
+	si := strings.TrimSpace(sb.String())
+	if si == "" {
+		return system
+	}
+	if system == "" {
+		return si
+	}
+	return si + "\n\n" + system
 }
 
 // convertContents translates genai.Content slices into Anthropic messages.

@@ -1,3 +1,4 @@
+// Package main is the entry point of graph-review.
 package main
 
 import (

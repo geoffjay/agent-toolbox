@@ -106,7 +106,7 @@ func Load(dir string) ([]Rule, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("walk rules directory: %w", err)
 	}
 
 	sort.SliceStable(rules, func(i, j int) bool {
@@ -136,7 +136,7 @@ var validSeverities = map[string]bool{
 func loadRule(path string) (*Rule, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read rule %s: %w", path, err)
 	}
 
 	fm, body, err := splitFrontmatter(string(data))
@@ -253,7 +253,7 @@ func FormatInstruction(base string, rules []Rule) string {
 	sb.WriteString("Treat them as additional requirements alongside the instructions above.\n\n")
 
 	for _, r := range rules {
-		sb.WriteString(fmt.Sprintf("### %s [%s, priority %d]\n\n", r.Title, r.Severity, r.Priority))
+		fmt.Fprintf(&sb, "### %s [%s, priority %d]\n\n", r.Title, r.Severity, r.Priority)
 		sb.WriteString(r.Body)
 		sb.WriteString("\n\n")
 	}

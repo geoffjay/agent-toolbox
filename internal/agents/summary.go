@@ -72,13 +72,17 @@ func NewSummaryAgent(m model.LLM, instruction string) (agent.Agent, error) {
 	if instruction == "" {
 		instruction = DefaultSummaryInstruction
 	}
-	return llmagent.New(llmagent.Config{
+	agent, err := llmagent.New(llmagent.Config{
 		Name:        SummaryAgentName,
 		Model:       m,
 		Description: "Aggregates reviewer findings into a single human-readable review report.",
 		Mode:        llmagent.ModeSingleTurn,
 		Instruction: instruction,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("build summary agent: %w", err)
+	}
+	return agent, nil
 }
 
 // FormatFindings turns the JoinNode's map[nodeName]output into the prompt

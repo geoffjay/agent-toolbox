@@ -1,3 +1,4 @@
+// Package cmd implements the graph-review command-line interface.
 package cmd
 
 import (

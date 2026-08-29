@@ -47,7 +47,7 @@ func NewTriageAgent(m model.LLM, instruction string) (agent.Agent, error) {
 	if instruction == "" {
 		instruction = DefaultTriageInstruction
 	}
-	return llmagent.New(llmagent.Config{
+	agent, err := llmagent.New(llmagent.Config{
 		Name:        TriageAgentName,
 		Model:       m,
 		Description: "Classifies a diff and routes it to the appropriate reviewers.",
@@ -55,6 +55,10 @@ func NewTriageAgent(m model.LLM, instruction string) (agent.Agent, error) {
 		Instruction: instruction,
 		OutputKey:   "triage_category",
 	})
+	if err != nil {
+		return nil, fmt.Errorf("build triage agent: %w", err)
+	}
+	return agent, nil
 }
 
 // RouteByTriage is an EmittingFunctionNode handler that reads the triage

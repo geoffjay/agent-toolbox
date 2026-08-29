@@ -64,16 +64,12 @@ func patchHunks(patch string) []diffHunk {
 			continue // file header ("diff --git", "index", "---", "+++")
 		}
 		switch {
-		case strings.HasPrefix(raw, "+"):
+		case strings.HasPrefix(raw, "+"), strings.HasPrefix(raw, " "):
 			cur.lines[line] = true
 			line++
-		case strings.HasPrefix(raw, " "):
-			cur.lines[line] = true
-			line++
-		case strings.HasPrefix(raw, "-"):
-			// deleted line: not anchorable on the RIGHT side
 		default:
-			// "\ No newline at end of file" and similar: no line consumed
+			// Deleted lines ("-") are not anchorable on the RIGHT side;
+			// "\ No newline at end of file" and similar consume no line.
 		}
 	}
 	return hunks

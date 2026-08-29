@@ -141,7 +141,7 @@ func (c *Client) GetDiff(ctx context.Context, ref RepoRef, number int) (string, 
 	endpoint := c.baseURL + path
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("build diff request: %w", err)
 	}
 	// The diff is the legacy text/plain payload; Accept: application/vnd.github.v3.diff
 	// is the documented stable media type for it.
@@ -149,15 +149,15 @@ func (c *Client) GetDiff(ctx context.Context, ref RepoRef, number int) (string, 
 	c.applyAuth(req)
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("fetch diff: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if err := checkStatus(resp, http.StatusOK); err != nil {
 		return "", err
 	}
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("read diff body: %w", err)
 	}
 	return string(b), nil
 }
@@ -249,15 +249,15 @@ func (c *Client) getJSON(ctx context.Context, path string, v any) error {
 	endpoint := c.baseURL + path
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	c.applyAuth(req)
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("GET %s: %w", path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if err := checkStatus(resp, http.StatusOK); err != nil {
 		return err
 	}
@@ -277,16 +277,16 @@ func (c *Client) postJSON(ctx context.Context, path string, body any, v any) err
 	endpoint := c.baseURL + path
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return err
+		return fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Content-Type", "application/json")
 	c.applyAuth(req)
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("POST %s: %w", path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if err := checkStatus(resp, http.StatusOK); err != nil {
 		return err
 	}

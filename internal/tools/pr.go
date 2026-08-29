@@ -30,7 +30,7 @@ func PRFiles(ctx agent.Context, _ PRFilesInput) (PRFilesOutput, error) {
 	}
 	files, err := github.NewClient("").ListFiles(ctx, ref, num)
 	if err != nil {
-		return PRFilesOutput{}, err
+		return PRFilesOutput{}, fmt.Errorf("list PR files: %w", err)
 	}
 	return PRFilesOutput{Files: files}, nil
 }
@@ -51,7 +51,7 @@ func PRComments(ctx agent.Context, _ PRCommentsInput) (PRCommentsOutput, error) 
 	}
 	comments, err := github.NewClient("").ListComments(ctx, ref, num)
 	if err != nil {
-		return PRCommentsOutput{}, err
+		return PRCommentsOutput{}, fmt.Errorf("list PR comments: %w", err)
 	}
 	return PRCommentsOutput{Comments: comments}, nil
 }
@@ -72,7 +72,7 @@ func PRReviews(ctx agent.Context, _ PRReviewsInput) (PRReviewsOutput, error) {
 	}
 	reviews, err := github.NewClient("").ListReviews(ctx, ref, num)
 	if err != nil {
-		return PRReviewsOutput{}, err
+		return PRReviewsOutput{}, fmt.Errorf("list PR reviews: %w", err)
 	}
 	return PRReviewsOutput{Reviews: reviews}, nil
 }
@@ -134,7 +134,7 @@ func parsePRRef(s string) (github.RepoRef, int, error) {
 	}
 	ref, err := github.ParseRepoRef(s[:hash])
 	if err != nil {
-		return github.RepoRef{}, 0, err
+		return github.RepoRef{}, 0, fmt.Errorf("parse pr ref %q: %w", s, err)
 	}
 	var num int
 	if _, err := fmt.Sscanf(s[hash+1:], "%d", &num); err != nil {

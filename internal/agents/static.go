@@ -1,6 +1,8 @@
 package agents
 
 import (
+	"fmt"
+
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/agent/llmagent"
 	"google.golang.org/adk/v2/model"
@@ -80,7 +82,7 @@ func NewStaticAgent(m model.LLM, instruction string, tools []tool.Tool) (agent.A
 	if instruction == "" {
 		instruction = DefaultStaticInstruction
 	}
-	return llmagent.New(llmagent.Config{
+	agent, err := llmagent.New(llmagent.Config{
 		Name:        StaticAgentName,
 		Model:       m,
 		Description: "Checks style, formatting, correctness, and common anti-patterns in a diff.",
@@ -89,4 +91,8 @@ func NewStaticAgent(m model.LLM, instruction string, tools []tool.Tool) (agent.A
 		OutputKey:   "static_findings",
 		Tools:       tools,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("build static analysis agent: %w", err)
+	}
+	return agent, nil
 }

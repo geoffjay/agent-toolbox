@@ -12,6 +12,8 @@ import (
 
 const maxToolInputBytes = 1 << 20 // 1 MiB
 
+// ErrToolInputTooLarge is returned when a streamed tool-use block
+// accumulates input beyond maxToolInputBytes.
 var ErrToolInputTooLarge = errors.New("anthropic: streamed tool input exceeds 1 MiB limit")
 
 // streamTranslator processes Anthropic streaming events and converts them

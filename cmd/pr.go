@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -64,7 +65,7 @@ posted unless you approve. Pass --assume-yes to post unattended (CI).`,
 
 			ref, err := github.ParseRepoRef(args[0])
 			if err != nil {
-				return err
+				return fmt.Errorf("parse repository ref: %w", err)
 			}
 			number, err := strconv.Atoi(args[1])
 			if err != nil {
@@ -147,51 +148,8 @@ posted unless you approve. Pass --assume-yes to post unattended (CI).`,
 			}
 
 			if postComments {
-				if strings.TrimSpace(report) == "" {
-					fmt.Fprintln(os.Stderr, "no review output to post")
-					return nil
-				}
-				findings := review.ParseFindings(report)
-				// Drop findings anchored outside the PR diff; the API
-				// would reject the whole review over them.
-				if files, err := client.ListFiles(ctx, ref, number); err != nil {
-					fmt.Fprintln(os.Stderr, "warning: could not list PR files; posting findings unvalidated:", err)
-				} else {
-					before := len(findings)
-					findings = review.FilterByFiles(findings, files)
-					if dropped := before - len(findings); dropped > 0 {
-						fmt.Fprintf(os.Stderr, "dropping %d finding(s) whose file is not part of the PR diff\n", dropped)
-					}
-					before = len(findings)
-					findings = review.FilterByDiffLines(findings, files)
-					if dropped := before - len(findings); dropped > 0 {
-						fmt.Fprintf(os.Stderr, "dropping %d finding(s) whose line is not part of the PR diff hunks\n", dropped)
-					}
-					req := review.BuildReviewRequest(report, findings)
-					confirmed, err := confirmPost(req, ref, number, assumeYes)
-					if err != nil {
-						return err
-					}
-					if !confirmed {
-						fmt.Fprintln(os.Stderr, "review not posted")
-						return nil
-					}
-					resp, err := client.PostReview(ctx, ref, number, req)
-					if err != nil {
-						// A residual anchor rejection (422 "Line could not be
-						// resolved") should not lose the human-approved review:
-						// post the body without inline comments rather than fail.
-						var apiErr *github.APIError
-						if errors.As(err, &apiErr) && apiErr.Status == http.StatusUnprocessableEntity && len(req.Comments) > 0 {
-							fmt.Fprintln(os.Stderr, "warning: GitHub rejected an inline comment anchor; posting the review without inline comments")
-							req.Comments = nil
-							resp, err = client.PostReview(ctx, ref, number, req)
-						}
-					}
-					if err != nil {
-						return fmt.Errorf("post review: %w", err)
-					}
-					fmt.Fprintf(os.Stderr, "review posted: %s\n", resp.HTMLURL)
+				if err := postReview(ctx, client, ref, number, report, assumeYes); err != nil {
+					return err
 				}
 			}
 
@@ -238,7 +196,7 @@ func confirmPost(req *github.PostReviewRequest, ref github.RepoRef, number int, 
 // answer) is an error so that a closed pipe can never be read as silent
 // approval.
 func readApproval(in io.Reader, out io.Writer) (bool, error) {
-	fmt.Fprint(out, "post this review? [y/N]: ")
+	_, _ = fmt.Fprint(out, "post this review? [y/N]: ")
 	line, err := bufio.NewReader(in).ReadString('\n')
 	if err != nil && strings.TrimSpace(line) == "" {
 		return false, fmt.Errorf("read confirmation: %w", err)
@@ -249,4 +207,59 @@ func readApproval(in io.Reader, out io.Writer) (bool, error) {
 	default:
 		return false, nil
 	}
+}
+
+// postReview filters the pipeline's findings against the PR's diff
+// (dropping any whose file or line cannot be anchored), prompts for human
+// confirmation, and posts the review. If the PR file list cannot be
+// fetched it warns and does not post anything.
+func postReview(ctx context.Context, client *github.Client, ref github.RepoRef, number int, report string, assumeYes bool) error {
+	if strings.TrimSpace(report) == "" {
+		fmt.Fprintln(os.Stderr, "no review output to post")
+		return nil
+	}
+	findings := review.ParseFindings(report)
+	// Drop findings anchored outside the PR diff; the API
+	// would reject the whole review over them.
+	files, err := client.ListFiles(ctx, ref, number)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "warning: could not list PR files; not posting the review:", err)
+		return nil
+	}
+	before := len(findings)
+	findings = review.FilterByFiles(findings, files)
+	if dropped := before - len(findings); dropped > 0 {
+		fmt.Fprintf(os.Stderr, "dropping %d finding(s) whose file is not part of the PR diff\n", dropped)
+	}
+	before = len(findings)
+	findings = review.FilterByDiffLines(findings, files)
+	if dropped := before - len(findings); dropped > 0 {
+		fmt.Fprintf(os.Stderr, "dropping %d finding(s) whose line is not part of the PR diff hunks\n", dropped)
+	}
+	req := review.BuildReviewRequest(report, findings)
+	confirmed, err := confirmPost(req, ref, number, assumeYes)
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		fmt.Fprintln(os.Stderr, "review not posted")
+		return nil
+	}
+	resp, err := client.PostReview(ctx, ref, number, req)
+	if err != nil {
+		// A residual anchor rejection (422 "Line could not be
+		// resolved") should not lose the human-approved review:
+		// post the body without inline comments rather than fail.
+		var apiErr *github.APIError
+		if errors.As(err, &apiErr) && apiErr.Status == http.StatusUnprocessableEntity && len(req.Comments) > 0 {
+			fmt.Fprintln(os.Stderr, "warning: GitHub rejected an inline comment anchor; posting the review without inline comments")
+			req.Comments = nil
+			resp, err = client.PostReview(ctx, ref, number, req)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("post review: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "review posted: %s\n", resp.HTMLURL)
+	return nil
 }

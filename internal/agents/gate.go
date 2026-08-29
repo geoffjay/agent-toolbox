@@ -59,7 +59,7 @@ func FindingsGate(ctx agent.Context, input any, emit func(*session.Event) error)
 		Payload:     input,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("request findings-gate input: %w", err)
 	}
 
 	decision, feedback, err := parseGateDecision(reply)

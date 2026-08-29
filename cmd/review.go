@@ -380,18 +380,18 @@ func promptGate(req *session.RequestInput) (map[string]any, error) {
 // promptGateAnswer reads a gate decision (and revision feedback) from in,
 // rendering the request on out. Split from promptGate for testability.
 func promptGateAnswer(in io.Reader, out io.Writer, req *session.RequestInput) (map[string]any, error) {
-	fmt.Fprintln(out, "\n=== human gate ===")
+	_, _ = fmt.Fprintln(out, "\n=== human gate ===")
 	if req.Message != "" {
-		fmt.Fprintln(out, req.Message)
+		_, _ = fmt.Fprintln(out, req.Message)
 	}
 	if req.Payload != nil {
 		if s, ok := req.Payload.(string); ok {
-			fmt.Fprintln(out, s)
+			_, _ = fmt.Fprintln(out, s)
 		} else {
-			fmt.Fprintln(out, jsonString(req.Payload))
+			_, _ = fmt.Fprintln(out, jsonString(req.Payload))
 		}
 	}
-	fmt.Fprint(out, "decision [approve/revise/abort]: ")
+	_, _ = fmt.Fprint(out, "decision [approve/revise/abort]: ")
 	// One buffered reader for the whole interaction: a second reader over
 	// the same stream would lose whatever the first had buffered ahead.
 	reader := bufio.NewReader(in)
@@ -407,7 +407,7 @@ func promptGateAnswer(in io.Reader, out io.Writer, req *session.RequestInput) (m
 	}
 	answer := map[string]any{"decision": decision}
 	if decision == agents.DecisionRevise {
-		fmt.Fprintln(out, "feedback for the reviewers (end with a single '.'):")
+		_, _ = fmt.Fprintln(out, "feedback for the reviewers (end with a single '.'):")
 		var lines []string
 		for {
 			l, rerr := reader.ReadString('\n')
@@ -451,21 +451,21 @@ func resumeMessage(interruptID string, answer any) *genai.Content {
 // so an empty review can be traced to missing tool use, missing agent
 // output, or a mis-rooted repo.
 func printShallowDiagnostics(w io.Writer, in runPipelineInput, stats *pipelineStats) {
-	fmt.Fprintf(w, "\ndiagnostics: %d events, %d tool call(s)\n", stats.events, stats.totalToolCalls())
+	_, _ = fmt.Fprintf(w, "\ndiagnostics: %d events, %d tool call(s)\n", stats.events, stats.totalToolCalls())
 	for _, author := range sortedKeys(stats.agentText) {
-		fmt.Fprintf(w, "  %s: %d bytes of output, %d tool call(s)\n",
+		_, _ = fmt.Fprintf(w, "  %s: %d bytes of output, %d tool call(s)\n",
 			author, stats.agentText[author], stats.toolCalls[author])
 	}
 	if in.noTools {
-		fmt.Fprintln(w, "  tools were disabled with --no-tools: reviewers saw only the diff")
+		_, _ = fmt.Fprintln(w, "  tools were disabled with --no-tools: reviewers saw only the diff")
 	} else if stats.totalToolCalls() == 0 {
-		fmt.Fprintln(w, "  no reviewer tool calls were made: the diff was reviewed without any repo context")
+		_, _ = fmt.Fprintln(w, "  no reviewer tool calls were made: the diff was reviewed without any repo context")
 	}
 	if in.noClone {
-		fmt.Fprintln(w, "  --no-clone is set: repo-inspection tools ran against the current")
-		fmt.Fprintln(w, "  directory, which may not be the PR repository; prefer --clone-repo <path>")
+		_, _ = fmt.Fprintln(w, "  --no-clone is set: repo-inspection tools ran against the current")
+		_, _ = fmt.Fprintln(w, "  directory, which may not be the PR repository; prefer --clone-repo <path>")
 	}
-	fmt.Fprintln(w, "re-run with -vv (or --debug) to trace every model event and tool payload on stderr")
+	_, _ = fmt.Fprintln(w, "re-run with -vv (or --debug) to trace every model event and tool payload on stderr")
 }
 
 // jsonString renders v as JSON for debug logs, falling back to %v.

@@ -9,6 +9,7 @@
 package tools
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -127,7 +128,7 @@ func GitBlame(ctx agent.Context, in GitBlameInput) (GitBlameOutput, error) {
 		return GitBlameOutput{}, err
 	}
 	rangeArg := fmt.Sprintf("%d,%d", lineOrZero(in.StartLine), lineOrZero(in.EndLine))
-	out, err := runGit(root, "blame", "-L", rangeArg, "--", in.Path)
+	out, err := runGit(ctx, root, "blame", "-L", rangeArg, "--", in.Path)
 	if err != nil {
 		return GitBlameOutput{}, fmt.Errorf("git blame %s: %w", in.Path, err)
 	}
@@ -162,7 +163,7 @@ func GitLog(ctx agent.Context, in GitLogInput) (GitLogOutput, error) {
 		}
 		args = append(args, "--", in.Path)
 	}
-	out, err := runGit(root, args...)
+	out, err := runGit(ctx, root, args...)
 	if err != nil {
 		return GitLogOutput{}, fmt.Errorf("git log: %w", err)
 	}
@@ -249,16 +250,17 @@ func lineOrZero(n int) int {
 	return n
 }
 
-// runGit runs a git command in dir and returns its stdout.
-func runGit(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+// runGit runs a git command in dir, cancelled with ctx, and returns its
+// stdout.
+func runGit(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
 		if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 			return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(string(ee.Stderr)))
 		}
-		return "", err
+		return "", fmt.Errorf("git %s: %w", args[0], err)
 	}
 	return string(out), nil
 }

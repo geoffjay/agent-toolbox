@@ -1,6 +1,8 @@
 package agents
 
 import (
+	"fmt"
+
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/agent/llmagent"
 	"google.golang.org/adk/v2/model"
@@ -85,7 +87,7 @@ func NewSecurityAgent(m model.LLM, instruction string, tools []tool.Tool) (agent
 	if instruction == "" {
 		instruction = DefaultSecurityInstruction
 	}
-	return llmagent.New(llmagent.Config{
+	agent, err := llmagent.New(llmagent.Config{
 		Name:        SecurityAgentName,
 		Model:       m,
 		Description: "Looks for vulnerabilities, unsafe patterns, and secret handling issues in a diff.",
@@ -94,4 +96,8 @@ func NewSecurityAgent(m model.LLM, instruction string, tools []tool.Tool) (agent
 		OutputKey:   "security_findings",
 		Tools:       tools,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("build security agent: %w", err)
+	}
+	return agent, nil
 }

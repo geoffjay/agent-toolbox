@@ -1,6 +1,16 @@
 version: "3"
 
+env:
+  BUILD_DIR: bin
+  BINARY_NAME: graph-review
+
 tasks:
+  deps:
+    desc: Install dependencies
+    cmds:
+      - go mod tidy
+      - go mod download
+
   lint:
     desc: Run linters
     cmds:
@@ -16,10 +26,15 @@ tasks:
     cmds:
       - go fmt ./...
 
+  vet:
+    desc: Vet code
+    cmds:
+      - go vet ./...
+
   test:
     desc: Run tests
     cmds:
-      - go test {{.CLI_ARGS}} ./...
+      - go test -v {{.CLI_ARGS}} ./...
 
   modernize:
     desc: Modernize code
@@ -33,6 +48,49 @@ tasks:
 
   run:
     desc: Run gag
-    aliases: [default]
     cmds:
       - go run .
+
+  all:
+    desc: Default target
+    deps: [deps, modernize, fmt, vet, test, build]
+    aliases: [default]
+
+  build:
+    desc: Build binary
+    cmds:
+      - mkdir -p $BUILD_DIR
+      - go build -o $BUILD_DIR/$BINARY_NAME .
+
+  build-all:
+    desc: Build for multiple platforms
+    cmds:
+      - mkdir -p $BUILD_DIR
+      # Linux
+      - GOOS=linux GOARCH=amd64 go build -o $BUILD_DIR/$BINARY_NAME-linux-amd64 .
+      # macOS
+      - GOOS=darwin GOARCH=amd64 go build -o $BUILD_DIR/$BINARY_NAME-darwin-amd64 .
+      - GOOS=darwin GOARCH=arm64 go build -o $BUILD_DIR/$BINARY_NAME-darwin-arm64 .
+      # Windows
+      - GOOS=windows GOARCH=amd64 go build -o $BUILD_DIR/$BINARY_NAME-windows-amd64.exe .
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf $BUILD_DIR
+      - go clean
+
+  dev:
+    desc: Development workflow
+    deps: [modernize, fmt, vet, test, build]
+
+  release:
+    desc: Release target (for GitHub Actions)
+    deps: [clean, build-all]
+    cmds:
+      - mkdir -p $BUILD_DIR/release
+      # Create archives
+      - cd $BUILD_DIR && tar -czf release/$BINARY_NAME-linux-amd64.tar.gz $BINARY_NAME-linux-amd64
+      - cd $BUILD_DIR && tar -czf release/$BINARY_NAME-darwin-amd64.tar.gz $BINARY_NAME-darwin-amd64
+      - cd $BUILD_DIR && tar -czf release/$BINARY_NAME-darwin-arm64.tar.gz $BINARY_NAME-darwin-arm64
+      - cd $BUILD_DIR && zip release/$BINARY_NAME-windows-amd64.zip $BINARY_NAME-windows-amd64.exe

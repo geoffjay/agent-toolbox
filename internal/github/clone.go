@@ -3,6 +3,8 @@ package github
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -31,32 +33,16 @@ func (c *Client) CloneRepo(ctx context.Context, pr *PR) (dir string, cleanup fun
 	cloneArgs := append(c.gitAuthArgs(),
 		"clone", "--depth", "1", "--branch", pr.Head.Ref,
 		headRepo.CloneableURL(), tmp)
-	cmd := exec.CommandContext(ctx, "git", cloneArgs...)
-	if out, err := cmd.Output(); err != nil {
+	if err := runGit(ctx, "", cloneArgs...); err != nil {
 		cleanup()
-		return "", nil, fmt.Errorf("git clone: %w: %s", err, trimErr(out))
+		return "", nil, fmt.Errorf("git clone: %w", err)
 	}
 
 	// Pin to the exact PR head SHA in case the branch moved.
 	if pr.Head.SHA != "" {
-		checkout := exec.CommandContext(ctx, "git", "checkout", pr.Head.SHA)
-		checkout.Dir = tmp
-		if _, err := checkout.Output(); err != nil {
-			// Fall back to fetching the SHA directly; shallow clones may
-			// not have it yet.
-			fetch := exec.CommandContext(ctx, "git", append(c.gitAuthArgs(),
-				"fetch", "--depth", "1", headRepo.CloneableURL(), pr.Head.SHA)...)
-			fetch.Dir = tmp
-			if out2, ferr := fetch.Output(); ferr != nil {
-				cleanup()
-				return "", nil, fmt.Errorf("git fetch %s: %w: %s", pr.Head.SHA, ferr, trimErr(out2))
-			}
-			checkout2 := exec.CommandContext(ctx, "git", "checkout", pr.Head.SHA)
-			checkout2.Dir = tmp
-			if out3, err := checkout2.Output(); err != nil {
-				cleanup()
-				return "", nil, fmt.Errorf("git checkout %s: %w: %s", pr.Head.SHA, err, trimErr(out3))
-			}
+		if err := c.pinHead(ctx, tmp, headRepo.CloneableURL(), pr.Head.SHA); err != nil {
+			cleanup()
+			return "", nil, fmt.Errorf("pin PR head: %w", err)
 		}
 	}
 
@@ -74,6 +60,49 @@ func trimErr(out []byte) string {
 		s = s[len(s)-512:]
 	}
 	return s
+}
+
+// pinHead checks out the PR head SHA in the freshly cloned repo, fetching
+// the SHA directly if the shallow clone does not contain it yet. The SHA
+// is validated before it is handed to git.
+func (c *Client) pinHead(ctx context.Context, dir, cloneURL, sha string) error {
+	if !validSHA(sha) {
+		return fmt.Errorf("invalid PR head SHA %q", sha)
+	}
+	if err := runGit(ctx, dir, "checkout", sha); err == nil {
+		return nil
+	}
+	fetchArgs := append(c.gitAuthArgs(), "fetch", "--depth", "1", cloneURL, sha)
+	if err := runGit(ctx, dir, fetchArgs...); err != nil {
+		return fmt.Errorf("git fetch %s: %w", sha, err)
+	}
+	if err := runGit(ctx, dir, "checkout", sha); err != nil {
+		return fmt.Errorf("git checkout %s: %w", sha, err)
+	}
+	return nil
+}
+
+// runGit runs git with args in dir. The command is cancelled with ctx,
+// and failures carry the tail of the command's stderr for context.
+func runGit(ctx context.Context, dir string, args ...string) error {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	if _, err := cmd.Output(); err != nil {
+		if ee, ok := errors.AsType[*exec.ExitError](err); ok {
+			return fmt.Errorf("%w: %s", err, trimErr(ee.Stderr))
+		}
+		return fmt.Errorf("git %s: %w", args[0], err)
+	}
+	return nil
+}
+
+// validSHA reports whether s is a full git object name: 40 lowercase hex
+// characters (SHA-1) or 64 (SHA-256). The PR head SHA comes from the
+// GitHub API and is passed to git subprocesses, so it is validated
+// before it reaches a command line.
+func validSHA(s string) bool {
+	b, err := hex.DecodeString(s)
+	return err == nil && (len(b) == 20 || len(b) == 32)
 }
 
 // gitAuthArgs returns git -c options that authenticate HTTPS operations
