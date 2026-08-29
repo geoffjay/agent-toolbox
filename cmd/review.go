@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -16,7 +17,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/session"
 	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/workflow"
 	"google.golang.org/genai"
 
 	"github.com/geoffjay/graph-review/internal/agents"
@@ -92,6 +95,7 @@ type pipelineFlags struct {
 	summaryInstruction  string
 	noTools             bool
 	rulesDir            string
+	findingsGate        bool
 }
 
 func reviewCmd() *cobra.Command {
@@ -221,13 +225,13 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 	}
 
 	root, err := graph.New(ctx, graph.Config{
-		Model:               m,
-		Tools:               reviewTools,
-		TriageInstruction:   in.triageInstruction,
-		StaticInstruction:   in.staticInstruction,
-		SecurityInstruction: in.securityInstruction,
-		SummaryInstruction:  in.summaryInstruction,
-		RulesDir:            rulesDir,
+		Model:              m,
+		Tools:              reviewTools,
+		TriageInstruction:  in.triageInstruction,
+		StaticInstruction:  in.staticInstruction,
+		SummaryInstruction: in.summaryInstruction,
+		RulesDir:           rulesDir,
+		FindingsGate:       in.findingsGate,
 	})
 	if err != nil {
 		return "", fmt.Errorf("build pipeline: %w", err)
@@ -268,41 +272,66 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 	runOpts := []runner.RunOption{
 		runner.WithStateDelta(in.state),
 	}
-	for ev, err := range r.Run(ctx, userID, sessionID, msg, agentRunConfig(), runOpts...) {
+
+	// The run loop supports gates: when a node pauses for human input
+	// (ev.RequestedInput) the turn ends, the CLI prompts on the
+	// terminal, and a second Run turn on the same session delivers the
+	// answer as an adk_request_input FunctionResponse. The loop repeats
+	// until a turn completes without pausing.
+	for {
+		var pending *session.RequestInput
+		for ev, err := range r.Run(ctx, userID, sessionID, msg, agentRunConfig(), runOpts...) {
+			if err != nil {
+				stats.logActivities()
+				return output.String(), err
+			}
+			if ev == nil {
+				continue
+			}
+			if ev.RequestedInput != nil {
+				pending = ev.RequestedInput
+			}
+			if ev.Content == nil {
+				continue
+			}
+			stats.events++
+			for _, part := range ev.Content.Parts {
+				switch {
+				case part.FunctionCall != nil:
+					stats.toolCalls[ev.Author]++
+					slog.Debug("tool call",
+						"agent", ev.Author,
+						"tool", part.FunctionCall.Name,
+						"args", debugSnippet(jsonString(part.FunctionCall.Args)))
+				case part.FunctionResponse != nil:
+					slog.Debug("tool result",
+						"agent", ev.Author,
+						"tool", part.FunctionResponse.Name,
+						"result", debugSnippet(jsonString(part.FunctionResponse.Response)))
+				case part.Text != "":
+					stats.agentText[ev.Author] += len(part.Text)
+					if part.Thought {
+						slog.Debug("model thought", "agent", ev.Author, "text", debugSnippet(part.Text))
+						continue
+					}
+					slog.Debug("agent text", "agent", ev.Author, "text", debugSnippet(part.Text))
+					fmt.Print(part.Text)
+					if ev.Author == agents.SummaryAgentName {
+						output.WriteString(part.Text)
+					}
+				}
+			}
+		}
+		if pending == nil {
+			break
+		}
+		answer, err := promptGate(pending)
 		if err != nil {
 			stats.logActivities()
 			return output.String(), err
 		}
-		if ev == nil || ev.Content == nil {
-			continue
-		}
-		stats.events++
-		for _, part := range ev.Content.Parts {
-			switch {
-			case part.FunctionCall != nil:
-				stats.toolCalls[ev.Author]++
-				slog.Debug("tool call",
-					"agent", ev.Author,
-					"tool", part.FunctionCall.Name,
-					"args", debugSnippet(jsonString(part.FunctionCall.Args)))
-			case part.FunctionResponse != nil:
-				slog.Debug("tool result",
-					"agent", ev.Author,
-					"tool", part.FunctionResponse.Name,
-					"result", debugSnippet(jsonString(part.FunctionResponse.Response)))
-			case part.Text != "":
-				stats.agentText[ev.Author] += len(part.Text)
-				if part.Thought {
-					slog.Debug("model thought", "agent", ev.Author, "text", debugSnippet(part.Text))
-					continue
-				}
-				slog.Debug("agent text", "agent", ev.Author, "text", debugSnippet(part.Text))
-				fmt.Print(part.Text)
-				if ev.Author == agents.SummaryAgentName {
-					output.WriteString(part.Text)
-				}
-			}
-		}
+		slog.Info("resuming pipeline", "interrupt", pending.InterruptID)
+		msg = resumeMessage(pending.InterruptID, answer)
 	}
 	fmt.Println()
 
@@ -327,6 +356,87 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 		printShallowDiagnostics(os.Stderr, in, stats)
 	}
 	return report, nil
+}
+
+// promptGate renders a paused gate's request on the terminal and collects
+// the human's decision (with feedback on revise). It fails closed when
+// stdin is not an interactive terminal.
+func promptGate(req *session.RequestInput) (map[string]any, error) {
+	stat, err := os.Stdin.Stat()
+	if err != nil || stat.Mode()&os.ModeCharDevice == 0 {
+		return nil, fmt.Errorf("pipeline paused for human input (%q) but stdin is not a terminal; re-run interactively", req.Message)
+	}
+	return promptGateAnswer(os.Stdin, os.Stderr, req)
+}
+
+// promptGateAnswer reads a gate decision (and revision feedback) from in,
+// rendering the request on out. Split from promptGate for testability.
+func promptGateAnswer(in io.Reader, out io.Writer, req *session.RequestInput) (map[string]any, error) {
+	fmt.Fprintln(out, "\n=== human gate ===")
+	if req.Message != "" {
+		fmt.Fprintln(out, req.Message)
+	}
+	if req.Payload != nil {
+		if s, ok := req.Payload.(string); ok {
+			fmt.Fprintln(out, s)
+		} else {
+			fmt.Fprintln(out, jsonString(req.Payload))
+		}
+	}
+	fmt.Fprint(out, "decision [approve/revise/abort]: ")
+	// One buffered reader for the whole interaction: a second reader over
+	// the same stream would lose whatever the first had buffered ahead.
+	reader := bufio.NewReader(in)
+	line, err := reader.ReadString('\n')
+	if err != nil && strings.TrimSpace(line) == "" {
+		return nil, fmt.Errorf("read gate decision: %w", err)
+	}
+	decision := strings.ToLower(strings.TrimSpace(line))
+	switch decision {
+	case agents.DecisionApprove, agents.DecisionRevise, agents.DecisionAbort:
+	default:
+		return nil, fmt.Errorf("invalid gate decision %q (want approve, revise, or abort)", decision)
+	}
+	answer := map[string]any{"decision": decision}
+	if decision == agents.DecisionRevise {
+		fmt.Fprintln(out, "feedback for the reviewers (end with a single '.'):")
+		var lines []string
+		for {
+			l, rerr := reader.ReadString('\n')
+			if strings.TrimSpace(l) == "." {
+				break
+			}
+			if l != "" {
+				lines = append(lines, l)
+			}
+			if rerr != nil {
+				break // EOF or failure: keep what was collected
+			}
+		}
+		feedback := strings.Join(lines, "")
+		if strings.TrimSpace(feedback) == "" {
+			return nil, fmt.Errorf("revise requires feedback describing what to change")
+		}
+		answer["feedback"] = feedback
+	}
+	return answer, nil
+}
+
+// resumeMessage builds the user-side Content that resumes a paused
+// workflow: a single FunctionResponse part whose ID/name match the
+// gate's adk_request_input interrupt, with the answer wrapped under
+// the "payload" key (the wire shape the workflow agent decodes).
+func resumeMessage(interruptID string, answer any) *genai.Content {
+	return &genai.Content{
+		Role: genai.RoleUser,
+		Parts: []*genai.Part{{
+			FunctionResponse: &genai.FunctionResponse{
+				ID:       interruptID,
+				Name:     workflow.WorkflowInputFunctionCallName,
+				Response: map[string]any{"payload": answer},
+			},
+		}},
+	}
 }
 
 // printShallowDiagnostics explains what the pipeline actually observed,
@@ -445,6 +555,7 @@ func addModelFlags(cmd *cobra.Command, mf *modelFlags) {
 func addPipelineFlags(cmd *cobra.Command, pf *pipelineFlags) {
 	cmd.Flags().BoolVar(&pf.noTools, "no-tools", false, "Disable repo-inspection and PR tools on the reviewer agents")
 	cmd.Flags().StringVar(&pf.rulesDir, "rules-dir", "", "Path to repository rules directory (default: .review/rules relative to repo root)")
+	cmd.Flags().BoolVar(&pf.findingsGate, "findings-gate", false, "Pause after the reviewers and require a human to approve the findings (revise loops the reviewers with your feedback)")
 	cmd.Flags().StringVar(&pf.triageInstruction, "triage-instruction", "", "Override the triage agent instruction")
 	cmd.Flags().StringVar(&pf.staticInstruction, "static-instruction", "", "Override the static analysis agent instruction")
 	cmd.Flags().StringVar(&pf.securityInstruction, "security-instruction", "", "Override the security agent instruction")

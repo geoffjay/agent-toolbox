@@ -7,10 +7,11 @@
 //	                              ├─ "security"─┼─> gather ─> format_findings ─> summary
 //	                              └─ "both" ────┘
 //
-// The triage agent emits one of static, security, or both. Each reviewer
-// edge uses a MultiRoute so "both" fans out to both reviewers while
-// "static"/"security" light up only the relevant one. A JoinNode waits for
-// the active reviewer(s), then format_findings and summary run.
+// With Config.FindingsGate the tail becomes a conditional cycle:
+//
+//	format_findings → findings_gate ─┬─ (default) → summary
+//	                                └─ (revise) → static + security (loop back;
+//	                                  gather re-fires and the gate runs again)
 package graph
 
 import (
@@ -50,6 +51,14 @@ type Config struct {
 	// .review/rules). When set, rules matching each agent are appended
 	// to that agent's instruction. When empty, no rules are loaded.
 	RulesDir string
+
+	// FindingsGate, when true, inserts a human approval gate between
+	// format_findings and summary. The gate pauses the run and waits
+	// for an approve/revise/abort decision; revise loops the reviewers
+	// back with the human's feedback (bounded by the gate's revision
+	// cap). Requires an interactive runner surface (the CLI prompts
+	// on the terminal) and fails closed without one.
+	FindingsGate bool
 }
 
 // New assembles the review pipeline as a workflow agent. The returned
@@ -140,10 +149,26 @@ func New(_ context.Context, cfg Config) (agent.Agent, error) {
 		agents.RouteSecurity, agents.RouteBoth,
 	})
 
-	// reviewer(s) → gather → format → summary
+	// reviewer(s) → gather → format → [findings gate] → summary
+	//
+	// With the findings gate enabled, format feeds the gate and the
+	// gate's default route continues to summary. A revise decision
+	// emits agents.RouteRevise, whose conditional edges loop back to the
+	// reviewer nodes; the cycle is legal because every path through it
+	// contains a routed edge, and the reviewers re-running re-fires
+	// gather (a join re-evaluates its barrier on each predecessor
+	// completion) so the revised findings re-enter the gate.
 	eb.AddFanIn(gather, staticNode, securityNode)
 	eb.Add(gather, format)
-	eb.Add(format, summaryNode)
+	if cfg.FindingsGate {
+		gate := agents.FindingsGateNode()
+		eb.Add(format, gate)
+		eb.AddRoute(gate, summaryNode, workflow.Default)
+		eb.AddRoute(gate, staticNode, workflow.StringRoute(agents.RouteRevise))
+		eb.AddRoute(gate, securityNode, workflow.StringRoute(agents.RouteRevise))
+	} else {
+		eb.Add(format, summaryNode)
+	}
 
 	root, err := workflowagent.New(workflowagent.Config{
 		Name:        "review_pipeline",
