@@ -338,6 +338,38 @@ func TestStreamAndFinishFlow(t *testing.T) {
 	}
 }
 
+// TestStreamSeparatorOwnLine guards the agent separator: the rule is a
+// complete line, so the agent's first text must not be glued onto it.
+func TestStreamSeparatorOwnLine(t *testing.T) {
+	m := sized(newModel())
+	m = drive(m, streamMsg{agent: "triage", text: "both"})
+
+	for _, line := range strings.Split(m.viewport.GetContent(), "\n") {
+		if strings.Contains(line, " triage ") && strings.Contains(line, "both") {
+			t.Errorf("separator and streamed text share a line: %q", line)
+		}
+	}
+}
+
+// TestStreamDoesNotPadLines guards streamed chunks against lipgloss block
+// alignment: styling a multi-line chunk in one Render call pads every line
+// to the widest one, and that padding soft-wraps into a blank line after
+// each row once the widest line exceeds the viewport.
+func TestStreamDoesNotPadLines(t *testing.T) {
+	m := sized(newModel())
+	m = drive(m, streamMsg{
+		agent: "review_pipeline",
+		text:  "short\na much longer line of streamed text",
+	})
+	m = drive(m, warnMsg{text: "warning line one\nwarning line two, the longest"})
+
+	for _, line := range strings.Split(m.viewport.GetContent(), "\n") {
+		if strings.HasSuffix(line, " ") {
+			t.Errorf("line padded with trailing spaces: %q", line)
+		}
+	}
+}
+
 // TestSpinnerTickChainSurvivesPause guards the tick chain: a dropped
 // spinner tick freezes the animation for the rest of the run.
 func TestSpinnerTickChainSurvivesPause(t *testing.T) {

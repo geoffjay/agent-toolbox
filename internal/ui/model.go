@@ -271,7 +271,7 @@ func (m *model) appendStream(agent, text string) {
 		m.streaming.WriteString(agentSeparator(m.theme, agent, m.viewport.Width()))
 		m.lastAgent = agent
 	}
-	m.streaming.WriteString(m.theme.Stream.Render(text))
+	m.streaming.WriteString(styleLines(m.theme.Stream, text))
 	m.refreshViewport()
 }
 
@@ -288,7 +288,7 @@ func (m *model) refreshViewport() {
 	}
 	for _, w := range m.warns {
 		b.WriteString("\n\n")
-		b.WriteString(m.theme.Warn.Render(indent(w)))
+		b.WriteString(styleLines(m.theme.Warn, indent(w)))
 	}
 	m.viewport.SetContent(b.String())
 	if stick {
@@ -388,11 +388,24 @@ func (m model) closeForm() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// agentSeparator renders a rule line announcing an agent's section.
+// agentSeparator renders a rule line announcing an agent's section. The
+// trailing newline keeps the agent's first text off the rule.
 func agentSeparator(t Theme, agent string, width int) string {
 	label := " " + agent + " "
 	rule := strings.Repeat("─", max(width-lipgloss.Width(label)-2, 3))
-	return t.Agent.Render(label + rule)
+	return t.Agent.Render(label+rule) + "\n"
+}
+
+// styleLines renders s through st one line at a time. Rendering a
+// multi-line string in one call pads every line to the widest one —
+// lipgloss aligns blocks — and the padding soft-wraps into spurious
+// blank lines in the viewport.
+func styleLines(st lipgloss.Style, s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = st.Render(l)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // indent prefixes every line of s with two spaces.
