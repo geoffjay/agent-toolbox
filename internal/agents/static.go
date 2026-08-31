@@ -83,13 +83,14 @@ func NewStaticAgent(m model.LLM, instruction string, tools []tool.Tool) (agent.A
 		instruction = DefaultStaticInstruction
 	}
 	agent, err := llmagent.New(llmagent.Config{
-		Name:        StaticAgentName,
-		Model:       m,
-		Description: "Checks style, formatting, correctness, and common anti-patterns in a diff.",
-		Mode:        llmagent.ModeSingleTurn,
-		Instruction: instruction,
-		OutputKey:   "static_findings",
-		Tools:       tools,
+		Name:                 StaticAgentName,
+		Model:                m,
+		Description:          "Checks style, formatting, correctness, and common anti-patterns in a diff.",
+		Mode:                 llmagent.ModeSingleTurn,
+		Instruction:          instruction,
+		OutputKey:            "static_findings",
+		Tools:                tools,
+		BeforeModelCallbacks: []llmagent.BeforeModelCallback{EnsureUserContent(StaticAgentName)},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build static analysis agent: %w", err)

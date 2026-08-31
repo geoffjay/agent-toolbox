@@ -88,13 +88,14 @@ func NewSecurityAgent(m model.LLM, instruction string, tools []tool.Tool) (agent
 		instruction = DefaultSecurityInstruction
 	}
 	agent, err := llmagent.New(llmagent.Config{
-		Name:        SecurityAgentName,
-		Model:       m,
-		Description: "Looks for vulnerabilities, unsafe patterns, and secret handling issues in a diff.",
-		Mode:        llmagent.ModeSingleTurn,
-		Instruction: instruction,
-		OutputKey:   "security_findings",
-		Tools:       tools,
+		Name:                 SecurityAgentName,
+		Model:                m,
+		Description:          "Looks for vulnerabilities, unsafe patterns, and secret handling issues in a diff.",
+		Mode:                 llmagent.ModeSingleTurn,
+		Instruction:          instruction,
+		OutputKey:            "security_findings",
+		Tools:                tools,
+		BeforeModelCallbacks: []llmagent.BeforeModelCallback{EnsureUserContent(SecurityAgentName)},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build security agent: %w", err)

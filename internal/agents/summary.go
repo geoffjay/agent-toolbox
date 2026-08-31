@@ -73,11 +73,12 @@ func NewSummaryAgent(m model.LLM, instruction string) (agent.Agent, error) {
 		instruction = DefaultSummaryInstruction
 	}
 	agent, err := llmagent.New(llmagent.Config{
-		Name:        SummaryAgentName,
-		Model:       m,
-		Description: "Aggregates reviewer findings into a single human-readable review report.",
-		Mode:        llmagent.ModeSingleTurn,
-		Instruction: instruction,
+		Name:                 SummaryAgentName,
+		Model:                m,
+		Description:          "Aggregates reviewer findings into a single human-readable review report.",
+		Mode:                 llmagent.ModeSingleTurn,
+		Instruction:          instruction,
+		BeforeModelCallbacks: []llmagent.BeforeModelCallback{EnsureUserContent(SummaryAgentName)},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build summary agent: %w", err)

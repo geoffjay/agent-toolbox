@@ -25,3 +25,9 @@
   pipeline issues the E2E runs surfaced (`--no-tools` stall; large diffs
   not reaching reviewers). Implementation lives in commits `5fd2e40` +
   `82d6508`.
+* **Decision + fix**: Empty reviews with Ollama/glm traced to an ADK bug
+  (parallel single-turn agents lose their seeded user content when a
+  sibling's events steal the current-turn pivot). Fixed in
+  `internal/agents/user_content.go` with an `EnsureUserContent()`
+  `BeforeModelCallback` on all four agents; recorded in
+  `decisions/adk-parallel-turn-input.md`.

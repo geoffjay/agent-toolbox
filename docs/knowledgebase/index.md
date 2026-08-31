@@ -52,7 +52,9 @@ to touch the KB on every edit.
 
 ## Decisions
 
-* _(empty — add decision docs here)_
+* [ADK parallel-turn input workaround](decisions/adk-parallel-turn-input.md) —
+  keep the diff in every agent LLM request; ADK's single-turn pivot scan
+  ignores branches, so parallel reviewers steal each other's turn boundary.
 
 ## Patterns
 
