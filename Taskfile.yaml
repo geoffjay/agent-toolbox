@@ -42,12 +42,12 @@ tasks:
       - go fix ./...
 
   install:
-    desc: Install gat locally
+    desc: Install graph-review locally
     cmds:
       - go install -v .
 
   run:
-    desc: Run gat
+    desc: Run graph-review
     cmds:
       - go run .
 
