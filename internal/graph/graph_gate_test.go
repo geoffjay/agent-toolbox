@@ -3,7 +3,9 @@ package graph_test
 import (
 	"context"
 	"iter"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"google.golang.org/adk/v2/agent"
@@ -23,10 +25,27 @@ import (
 // makes the loop-back observable: revised findings can only reach the
 // summary if the gate's revise route actually re-ran the reviewers.
 type scriptedModel struct {
-	calls []string // recorded "agent" markers, in order
+	mu sync.Mutex
+	// calls records which agent marker each LLM call carried. The
+	// reviewers run as parallel workflow nodes, so the order between
+	// concurrently recorded markers is nondeterministic.
+	calls []string
 }
 
 func (m *scriptedModel) Name() string { return "scripted" }
+
+func (m *scriptedModel) recordCall(which string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, which)
+}
+
+// recordedCalls returns a snapshot of the recorded markers.
+func (m *scriptedModel) recordedCalls() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.calls)
+}
 
 func (m *scriptedModel) GenerateContent(_ context.Context, req *model.LLMRequest, _ bool) iter.Seq2[*model.LLMResponse, error] {
 	return func(yield func(*model.LLMResponse, error) bool) {
@@ -60,7 +79,7 @@ func (m *scriptedModel) GenerateContent(_ context.Context, req *model.LLMRequest
 			which = "unknown"
 			out = "unexpected prompt: " + prompt
 		}
-		m.calls = append(m.calls, which)
+		m.recordCall(which)
 		yield(&model.LLMResponse{Content: &genai.Content{
 			Role:  "model",
 			Parts: []*genai.Part{{Text: out}},
@@ -193,14 +212,15 @@ func TestFindingsGateReviseLoop(t *testing.T) {
 	}
 
 	// The reviewers must have run twice (round 1 + revision round).
+	calls := m.recordedCalls()
 	reviewerRuns := 0
-	for _, c := range m.calls {
+	for _, c := range calls {
 		if c == "reviewer" {
 			reviewerRuns++
 		}
 	}
 	if reviewerRuns < 4 { // "both" fans out to static + security per round
-		t.Errorf("reviewer LLM calls = %d, want at least 4 (2 reviewers × 2 rounds); calls: %v", reviewerRuns, m.calls)
+		t.Errorf("reviewer LLM calls = %d, want at least 4 (2 reviewers × 2 rounds); calls: %v", reviewerRuns, calls)
 	}
 }
 
