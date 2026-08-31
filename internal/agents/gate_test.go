@@ -13,14 +13,19 @@ func TestParseGateDecision(t *testing.T) {
 		wantFeedback string
 		wantErr      bool
 	}{
-		{"map with decision and feedback",
+		{
+			"map with decision and feedback",
 			map[string]any{"decision": "revise", "feedback": "dig into the NPE"},
-			DecisionRevise, "dig into the NPE", false},
+			DecisionRevise, "dig into the NPE", false,
+		},
 		{"map with approve", map[string]any{"decision": "approve"}, DecisionApprove, "", false},
 		{"bare string", "Approve\n", DecisionApprove, "", false},
 		{"bare revise string", "revise", DecisionRevise, "", false},
-		{"map with unknown decision",
-			map[string]any{"decision": "maybe"}, "", "", true},
+		{
+			"map with unknown decision",
+			map[string]any{"decision": "maybe"},
+			"", "", true,
+		},
 		{"unreadable type", 42, "", "", true},
 	}
 	for _, tt := range tests {

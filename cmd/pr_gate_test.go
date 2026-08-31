@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"bytes"
+	"io"
 	"os"
+	"strings"
 	"testing"
 
-	"github.com/geoffjay/graph-review/internal/github"
+	"github.com/geoffjay/graph-review/internal/ui"
 )
 
 // TestConfirmPostInteractivePTY exercises the human-approval gate on a real
@@ -25,19 +28,60 @@ func TestConfirmPostInteractivePTY(t *testing.T) {
 		t.Skip("stdin is not a terminal")
 	}
 
-	req := &github.PostReviewRequest{
-		Body:  "unit-test review body",
-		Event: "COMMENT",
-		Comments: []github.ReviewComment{
-			{Path: "a.go", Line: 1, Body: "nit: comment body"},
-		},
-	}
-	ok, err := confirmPost(req, github.RepoRef{Owner: "geoffjay", Repo: "graph-review"}, 42, false)
+	ok, err := plainPresenter{}.Confirm(ui.Confirmation{
+		Title:  "post this review to geoffjay/graph-review#42?",
+		Detail: "event: COMMENT (1 inline comment)\n  comment 1 — a.go:1",
+	})
 	if err != nil {
-		t.Fatalf("confirmPost() error = %v", err)
+		t.Fatalf("Confirm() error = %v", err)
 	}
 	want := ptyExpect == "approve"
 	if ok != want {
-		t.Errorf("confirmPost() = %v, want %v (PTY_EXPECT=%q)", ok, want, ptyExpect)
+		t.Errorf("Confirm() = %v, want %v (PTY_EXPECT=%q)", ok, want, ptyExpect)
+	}
+}
+
+// TestPlainConfirmPrintsBody guards the plain confirm surface: the human
+// is shown the full text they are approving, not just the event summary.
+// With a non-terminal stdin the prompt declines (fail closed), but the
+// title, detail, and body are printed before that check.
+func TestPlainConfirmPrintsBody(t *testing.T) {
+	// Pipe both stdin and stderr. The swapped stdin pins the fail-closed
+	// path on every environment — under a PTY the real stdin would make
+	// readApproval block waiting for a typed answer.
+	sr, sw, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("stdin pipe: %v", err)
+	}
+	er, ew, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("stderr pipe: %v", err)
+	}
+	stdin, stderr := os.Stdin, os.Stderr
+	os.Stdin, os.Stderr = sr, ew
+	_, confirmErr := plainPresenter{}.Confirm(ui.Confirmation{
+		Title:  "post this review to geoffjay/graph-review#42?",
+		Detail: "event: COMMENT (1 inline comment)",
+		Body:   "## Verdict\n\nLGTM with one nit.",
+	})
+	os.Stdin, os.Stderr = stdin, stderr
+	_ = sw.Close()
+	_ = sr.Close()
+	_ = ew.Close()
+	var out bytes.Buffer
+	_, _ = io.Copy(&out, er)
+
+	if confirmErr == nil {
+		t.Error("Confirm() succeeded with non-terminal stdin; want fail-closed error")
+	}
+	for _, want := range []string{
+		"post this review to geoffjay/graph-review#42?",
+		"event: COMMENT (1 inline comment)",
+		"## Verdict",
+		"LGTM with one nit.",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("confirm output missing %q:\n%s", want, out.String())
+		}
 	}
 }

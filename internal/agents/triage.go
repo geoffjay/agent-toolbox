@@ -48,12 +48,13 @@ func NewTriageAgent(m model.LLM, instruction string) (agent.Agent, error) {
 		instruction = DefaultTriageInstruction
 	}
 	agent, err := llmagent.New(llmagent.Config{
-		Name:        TriageAgentName,
-		Model:       m,
-		Description: "Classifies a diff and routes it to the appropriate reviewers.",
-		Mode:        llmagent.ModeSingleTurn,
-		Instruction: instruction,
-		OutputKey:   "triage_category",
+		Name:                 TriageAgentName,
+		Model:                m,
+		Description:          "Classifies a diff and routes it to the appropriate reviewers.",
+		Mode:                 llmagent.ModeSingleTurn,
+		Instruction:          instruction,
+		OutputKey:            "triage_category",
+		BeforeModelCallbacks: []llmagent.BeforeModelCallback{EnsureUserContent(TriageAgentName)},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build triage agent: %w", err)

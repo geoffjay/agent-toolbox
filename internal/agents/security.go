@@ -65,20 +65,19 @@ const DefaultSecurityInstruction = "You are a thorough security reviewer on a co
 	"A review that says \"looks secure\" or \"no issues\" without showing this\n" +
 	"analysis is not acceptable. You must demonstrate that you read the diff.\n" +
 	"\n" +
-	"## Example good finding\n" +
+	"## Example good finding (illustrative only)\n" +
 	"\n" +
-	"- `internal/agents/model.go:60` [major] The provider auto-detection\n" +
-	"  reads ANTHROPIC_API_KEY from the environment. If an attacker can\n" +
-	"  inject this env var (e.g. via a malicious .env file or CI config),\n" +
-	"  the model will route API calls and the API key to an attacker-\n" +
-	"  controlled endpoint. Validate that the key does not originate from\n" +
-	"  an untrusted source, or require explicit --provider to opt in.\n" +
+	"- `internal/agents/model.go:74` [major] The provider auto-detection\n" +
+	"  reads ANTHROPIC_API_KEY from the environment. An attacker who controls\n" +
+	"  a .env file also sets ANTHROPIC_BASE_URL there. The model then sends\n" +
+	"  its API key to that endpoint. Require an explicit --provider to\n" +
+	"  opt in.\n" +
 	"\n" +
 	"## Example bad finding (do not do this)\n" +
 	"\n" +
 	"- No security issues found.\n" +
 	"\n" +
-	"Keep your review under 500 words unless the diff is large."
+	"Keep your review under 500 words unless the diff is large." + StyleInstruction
 
 // NewSecurityAgent builds the security LLM agent. The supplied tools let
 // it inspect surrounding code (e.g. read_file, git_blame) when it needs
@@ -88,13 +87,14 @@ func NewSecurityAgent(m model.LLM, instruction string, tools []tool.Tool) (agent
 		instruction = DefaultSecurityInstruction
 	}
 	agent, err := llmagent.New(llmagent.Config{
-		Name:        SecurityAgentName,
-		Model:       m,
-		Description: "Looks for vulnerabilities, unsafe patterns, and secret handling issues in a diff.",
-		Mode:        llmagent.ModeSingleTurn,
-		Instruction: instruction,
-		OutputKey:   "security_findings",
-		Tools:       tools,
+		Name:                 SecurityAgentName,
+		Model:                m,
+		Description:          "Looks for vulnerabilities, unsafe patterns, and secret handling issues in a diff.",
+		Mode:                 llmagent.ModeSingleTurn,
+		Instruction:          instruction,
+		OutputKey:            "security_findings",
+		Tools:                tools,
+		BeforeModelCallbacks: []llmagent.BeforeModelCallback{EnsureUserContent(SecurityAgentName)},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build security agent: %w", err)

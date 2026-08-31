@@ -61,19 +61,19 @@ const DefaultStaticInstruction = "You are a thorough static analysis reviewer on
 	"A review that says \"looks clean\" or \"no issues\" without showing this\n" +
 	"analysis is not acceptable. You must demonstrate that you read the diff.\n" +
 	"\n" +
-	"## Example good finding\n" +
+	"## Example good finding (illustrative only)\n" +
 	"\n" +
-	"- `internal/rules/rules.go:180` [major] The closing delimiter search\n" +
-	"  uses strings.Index(rest, \"\\n---\") which matches any occurrence of\n" +
-	"  \"\\n---\" in the body, not just the closing frontmatter delimiter. A\n" +
-	"  rule body containing a Markdown horizontal rule would be incorrectly\n" +
-	"  split. Use a regex anchored to line start: (?m)^---\\s*$.\n" +
+	"- `internal/rules/rules.go:180` [major] strings.Index(rest, \"\\n---\")\n" +
+	"  returns the first match in the body. A Markdown horizontal rule can\n" +
+	"  come before the closing delimiter. The parser then splits the rule\n" +
+	"  at the wrong place. Anchor the delimiter to a line start with\n" +
+	"  (?m)^---\\s*$.\n" +
 	"\n" +
 	"## Example bad finding (do not do this)\n" +
 	"\n" +
 	"- No issues found.\n" +
 	"\n" +
-	"Keep your review under 500 words unless the diff is large."
+	"Keep your review under 500 words unless the diff is large." + StyleInstruction
 
 // NewStaticAgent builds the static analysis LLM agent. The supplied tools
 // let it inspect surrounding code (e.g. read_file, list_files, git_blame)
@@ -83,13 +83,14 @@ func NewStaticAgent(m model.LLM, instruction string, tools []tool.Tool) (agent.A
 		instruction = DefaultStaticInstruction
 	}
 	agent, err := llmagent.New(llmagent.Config{
-		Name:        StaticAgentName,
-		Model:       m,
-		Description: "Checks style, formatting, correctness, and common anti-patterns in a diff.",
-		Mode:        llmagent.ModeSingleTurn,
-		Instruction: instruction,
-		OutputKey:   "static_findings",
-		Tools:       tools,
+		Name:                 StaticAgentName,
+		Model:                m,
+		Description:          "Checks style, formatting, correctness, and common anti-patterns in a diff.",
+		Mode:                 llmagent.ModeSingleTurn,
+		Instruction:          instruction,
+		OutputKey:            "static_findings",
+		Tools:                tools,
+		BeforeModelCallbacks: []llmagent.BeforeModelCallback{EnsureUserContent(StaticAgentName)},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build static analysis agent: %w", err)

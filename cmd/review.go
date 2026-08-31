@@ -17,6 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/workflow"
@@ -27,7 +28,7 @@ import (
 	"github.com/geoffjay/graph-review/internal/review"
 	"github.com/geoffjay/graph-review/internal/rules"
 	"github.com/geoffjay/graph-review/internal/tools"
-	"google.golang.org/adk/v2/runner"
+	"github.com/geoffjay/graph-review/internal/ui"
 )
 
 // modelFlags carries the model options shared by every review subcommand.
@@ -40,8 +41,8 @@ type modelFlags struct {
 }
 
 // loggingFlags carries the diagnostic log controls shared by every review
-// subcommand. Log output goes to stderr so stdout stays reserved for
-// review output.
+// subcommand. The plain surface logs to stderr; the TUI surface logs to a
+// per-run file in the user cache dir because bubbletea owns the terminal.
 type loggingFlags struct {
 	verbose int  // -v count
 	debug   bool // --debug
@@ -61,15 +62,9 @@ func (lf loggingFlags) level() slog.Level {
 	}
 }
 
-// configureLogging installs the process-wide slog default so internal
-// packages (agents, tools) log at the level the user selected.
-func configureLogging(lf loggingFlags) {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lf.level()})))
-}
-
 func addLoggingFlags(cmd *cobra.Command, lf *loggingFlags) {
 	cmd.Flags().CountVarP(&lf.verbose, "verbose", "v",
-		"Increase stderr log verbosity: -v shows pipeline flow, -vv adds raw agent output and tool activity")
+		"Increase log verbosity: -v shows pipeline flow, -vv adds raw agent output and tool activity")
 	cmd.Flags().BoolVar(&lf.debug, "debug", false,
 		"Log debug detail: every model event, tool call arguments, and tool results")
 }
@@ -121,6 +116,7 @@ func reviewDiffCmd() *cobra.Command {
 		lf        loggingFlags
 		repoPath  string
 		sessionID string
+		plain     bool
 	)
 
 	cmd := &cobra.Command{
@@ -131,11 +127,13 @@ func reviewDiffCmd() *cobra.Command {
 The diff is read from the file given as an argument, or from stdin when
 the argument is "-" or omitted. The reviewer agents can call
 repo-inspection tools (read_file, list_files, git_blame, git_log) rooted
-at --repo (default: working directory). Use --no-tools to disable them.`,
+at --repo (default: working directory). Use --no-tools to disable them.
+
+Progress is shown in a terminal interface when stdout is a terminal;
+pass --plain for the classic streaming output.`,
 		Aliases: []string{"file"},
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			configureLogging(lf)
 			ctx := cmd.Context()
 
 			diff, err := readDiff(args)
@@ -154,34 +152,57 @@ at --repo (default: working directory). Use --no-tools to disable them.`,
 			state := map[string]any{
 				tools.RepoPathStateKey: absRepo,
 			}
-			_, err = runPipeline(ctx, runPipelineInput{
-				modelFlags:    mf,
-				pipelineFlags: pf,
-				loggingFlags:  lf,
-				diff:          diff,
-				sessionID:     sessionID,
-				state:         state,
-				label:         fmt.Sprintf("reviewing %d bytes of diff with model %s", len(diff), mf.modelName),
-				repoRoot:      absRepo,
-			})
-			return err
+			work := func(ctx context.Context, p Presenter) error {
+				report, err := runPipeline(ctx, runPipelineInput{
+					modelFlags:    mf,
+					pipelineFlags: pf,
+					diff:          diff,
+					sessionID:     sessionID,
+					state:         state,
+					label:         fmt.Sprintf("reviewing %d bytes of diff with model %s", len(diff), mf.modelName),
+					repoRoot:      absRepo,
+				}, p)
+				if err != nil {
+					return fmt.Errorf("run pipeline: %w", err)
+				}
+				p.Finish(report)
+				return nil
+			}
+			return dispatch(ctx, lf, plain, work)
 		},
 	}
 
 	addModelFlags(cmd, &mf)
 	addLoggingFlags(cmd, &lf)
 	addPipelineFlags(cmd, &pf)
+	addUIFlags(cmd, &plain)
 	cmd.Flags().StringVar(&repoPath, "repo", ".", "Repository root the review tools operate in")
 	cmd.Flags().StringVar(&sessionID, "session", "", "Session ID for the runner (random by default)")
 
 	return cmd
 }
 
+// addUIFlags wires the presentation-surface flags onto a command.
+func addUIFlags(cmd *cobra.Command, plain *bool) {
+	cmd.Flags().BoolVar(plain, "plain", false, "Use classic stdout/stderr output instead of the terminal interface")
+}
+
+// payloadText renders a gate request payload for display: strings are
+// kept verbatim, anything else falls back to JSON.
+func payloadText(payload any) string {
+	if payload == nil {
+		return ""
+	}
+	if s, ok := payload.(string); ok {
+		return s
+	}
+	return jsonString(payload)
+}
+
 // runPipelineInput bundles the inputs to runPipeline.
 type runPipelineInput struct {
 	modelFlags
 	pipelineFlags
-	loggingFlags
 	diff      string
 	sessionID string
 	state     map[string]any
@@ -192,10 +213,11 @@ type runPipelineInput struct {
 
 // runPipeline builds the model, tools, graph, and runner from the given
 // input, sends the diff as a user message, and streams the agent output
-// to stdout. The state map is seeded into the runner via WithStateDelta
-// so the tools can read repo_path / pr_ref at runtime. It returns the
-// full text output of the pipeline (concatenated non-thought text parts).
-func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
+// through the presenter. The state map is seeded into the runner via
+// WithStateDelta so the tools can read repo_path / pr_ref at runtime. It
+// returns the full text output of the pipeline (concatenated non-thought
+// text parts).
+func runPipeline(ctx context.Context, in runPipelineInput, p Presenter) (string, error) {
 	m, err := agents.NewModel(ctx, agents.ModelConfig{
 		Provider:  agents.Provider(in.provider),
 		ModelName: in.modelName,
@@ -226,13 +248,14 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 	}
 
 	root, err := graph.New(ctx, graph.Config{
-		Model:              m,
-		Tools:              reviewTools,
-		TriageInstruction:  in.triageInstruction,
-		StaticInstruction:  in.staticInstruction,
-		SummaryInstruction: in.summaryInstruction,
-		RulesDir:           rulesDir,
-		FindingsGate:       in.findingsGate,
+		Model:               m,
+		Tools:               reviewTools,
+		TriageInstruction:   in.triageInstruction,
+		StaticInstruction:   in.staticInstruction,
+		SecurityInstruction: in.securityInstruction,
+		SummaryInstruction:  in.summaryInstruction,
+		RulesDir:            rulesDir,
+		FindingsGate:        in.findingsGate,
 	})
 	if err != nil {
 		return "", fmt.Errorf("build pipeline: %w", err)
@@ -265,7 +288,7 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 		Role: "user",
 	}
 
-	fmt.Fprintln(os.Stderr, in.label)
+	p.Start(in.label)
 
 	var output strings.Builder
 	stats := &pipelineStats{agentText: map[string]int{}, toolCalls: map[string]int{}}
@@ -275,16 +298,16 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 	}
 
 	// The run loop supports gates: when a node pauses for human input
-	// (ev.RequestedInput) the turn ends, the CLI prompts on the
-	// terminal, and a second Run turn on the same session delivers the
-	// answer as an adk_request_input FunctionResponse. The loop repeats
-	// until a turn completes without pausing.
+	// (ev.RequestedInput) the turn ends, the CLI asks the human through
+	// the presenter, and a second Run turn on the same session delivers
+	// the answer as an adk_request_input FunctionResponse. The loop
+	// repeats until a turn completes without pausing.
 	for {
 		var pending *session.RequestInput
 		for ev, err := range r.Run(ctx, userID, sessionID, msg, agentRunConfig(), runOpts...) {
 			if err != nil {
 				stats.logActivities()
-				return output.String(), err
+				return output.String(), fmt.Errorf("run agents: %w", err)
 			}
 			if ev == nil {
 				continue
@@ -300,6 +323,7 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 				switch {
 				case part.FunctionCall != nil:
 					stats.toolCalls[ev.Author]++
+					p.Activity(fmt.Sprintf("%s → %s", ev.Author, part.FunctionCall.Name))
 					slog.Debug("tool call",
 						"agent", ev.Author,
 						"tool", part.FunctionCall.Name,
@@ -316,15 +340,9 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 						continue
 					}
 					slog.Debug("agent text", "agent", ev.Author, "text", debugSnippet(part.Text))
-					isSummary := ev.Author == agents.SummaryAgentName
-					// The summary agent produces the final report and is
-					// always shown. Intermediate reviewer output (which
-					// echoes diff hunks in its line-by-line analysis) is
-					// noise by default and streams only under -v/--debug.
-					if isSummary || in.level() <= slog.LevelInfo {
-						fmt.Print(part.Text)
-					}
-					if isSummary {
+					p.Activity(ev.Author)
+					p.Stream(ev.Author, part.Text)
+					if ev.Author == agents.SummaryAgentName {
 						output.WriteString(part.Text)
 					}
 				}
@@ -333,15 +351,17 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 		if pending == nil {
 			break
 		}
-		answer, err := promptGate(pending)
+		answer, err := p.Gate(ui.GateRequest{
+			Message: pending.Message,
+			Payload: payloadText(pending.Payload),
+		})
 		if err != nil {
 			stats.logActivities()
-			return output.String(), err
+			return output.String(), fmt.Errorf("collect gate decision: %w", err)
 		}
 		slog.Info("resuming pipeline", "interrupt", pending.InterruptID)
 		msg = resumeMessage(pending.InterruptID, answer)
 	}
-	fmt.Println()
 
 	report := output.String()
 	findings := review.ParseFindings(report)
@@ -352,16 +372,17 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 		"findings", len(findings))
 	stats.logActivities()
 
-	if strings.TrimSpace(report) == "" {
-		fmt.Fprintln(os.Stderr, "\nWARNING: the review produced no report at all.")
-		fmt.Fprintln(os.Stderr, "Every agent returned an empty response — the model likely failed.")
-		fmt.Fprintln(os.Stderr, "Check the log lines above; re-run with -vv to trace the failure.")
-		printShallowDiagnostics(os.Stderr, in, stats)
-	} else if warnShallowReview(report, in.diff) {
-		fmt.Fprintln(os.Stderr, "\nWARNING: the review produced no findings for a non-trivial diff.")
-		fmt.Fprintln(os.Stderr, "This may indicate the model did not thoroughly analyze the code.")
-		fmt.Fprintln(os.Stderr, "Consider using a stronger model or reviewing manually.")
-		printShallowDiagnostics(os.Stderr, in, stats)
+	switch {
+	case strings.TrimSpace(report) == "":
+		p.Warn("WARNING: the review produced no report at all.\n" +
+			"Every agent returned an empty response — the model likely failed.\n" +
+			"Check the log for details; re-run with -vv to trace the failure.\n" +
+			shallowDiagnostics(in, stats))
+	case warnShallowReview(report, in.diff):
+		p.Warn("WARNING: the review produced no findings for a non-trivial diff.\n" +
+			"This may indicate the model did not thoroughly analyze the code.\n" +
+			"Consider using a stronger model or reviewing manually.\n" +
+			shallowDiagnostics(in, stats))
 	}
 	return report, nil
 }
@@ -369,7 +390,7 @@ func runPipeline(ctx context.Context, in runPipelineInput) (string, error) {
 // promptGate renders a paused gate's request on the terminal and collects
 // the human's decision (with feedback on revise). It fails closed when
 // stdin is not an interactive terminal.
-func promptGate(req *session.RequestInput) (map[string]any, error) {
+func promptGate(req ui.GateRequest) (map[string]any, error) {
 	stat, err := os.Stdin.Stat()
 	if err != nil || stat.Mode()&os.ModeCharDevice == 0 {
 		return nil, fmt.Errorf("pipeline paused for human input (%q) but stdin is not a terminal; re-run interactively", req.Message)
@@ -379,17 +400,13 @@ func promptGate(req *session.RequestInput) (map[string]any, error) {
 
 // promptGateAnswer reads a gate decision (and revision feedback) from in,
 // rendering the request on out. Split from promptGate for testability.
-func promptGateAnswer(in io.Reader, out io.Writer, req *session.RequestInput) (map[string]any, error) {
+func promptGateAnswer(in io.Reader, out io.Writer, req ui.GateRequest) (map[string]any, error) {
 	_, _ = fmt.Fprintln(out, "\n=== human gate ===")
 	if req.Message != "" {
 		_, _ = fmt.Fprintln(out, req.Message)
 	}
-	if req.Payload != nil {
-		if s, ok := req.Payload.(string); ok {
-			_, _ = fmt.Fprintln(out, s)
-		} else {
-			_, _ = fmt.Fprintln(out, jsonString(req.Payload))
-		}
+	if req.Payload != "" {
+		_, _ = fmt.Fprintln(out, req.Payload)
 	}
 	_, _ = fmt.Fprint(out, "decision [approve/revise/abort]: ")
 	// One buffered reader for the whole interaction: a second reader over
@@ -445,6 +462,14 @@ func resumeMessage(interruptID string, answer any) *genai.Content {
 			},
 		}},
 	}
+}
+
+// shallowDiagnostics renders the diagnostics block as a string for the
+// presenter surfaces.
+func shallowDiagnostics(in runPipelineInput, stats *pipelineStats) string {
+	var b strings.Builder
+	printShallowDiagnostics(&b, in, stats)
+	return b.String()
 }
 
 // printShallowDiagnostics explains what the pipeline actually observed,
@@ -559,15 +584,20 @@ func addModelFlags(cmd *cobra.Command, mf *modelFlags) {
 	cmd.Flags().StringVar(&mf.baseURL, "base-url", "", "Base URL for the endpoint (env OPENAI_BASE_URL or ANTHROPIC_BASE_URL)")
 }
 
+// instructionOverrideHelp is the shared suffix for the agent-instruction
+// override flags: an override replaces the built-in default, which
+// carries the ASD-STE100 style rules.
+const instructionOverrideHelp = " (replaces the built-in guidance, including its ASD-STE100 style rules)"
+
 // addPipelineFlags wires the shared pipeline flags onto a command.
 func addPipelineFlags(cmd *cobra.Command, pf *pipelineFlags) {
 	cmd.Flags().BoolVar(&pf.noTools, "no-tools", false, "Disable repo-inspection and PR tools on the reviewer agents")
 	cmd.Flags().StringVar(&pf.rulesDir, "rules-dir", "", "Path to repository rules directory (default: .review/rules relative to repo root)")
 	cmd.Flags().BoolVar(&pf.findingsGate, "findings-gate", false, "Pause after the reviewers and require a human to approve the findings (revise loops the reviewers with your feedback)")
-	cmd.Flags().StringVar(&pf.triageInstruction, "triage-instruction", "", "Override the triage agent instruction")
-	cmd.Flags().StringVar(&pf.staticInstruction, "static-instruction", "", "Override the static analysis agent instruction")
-	cmd.Flags().StringVar(&pf.securityInstruction, "security-instruction", "", "Override the security agent instruction")
-	cmd.Flags().StringVar(&pf.summaryInstruction, "summary-instruction", "", "Override the summary agent instruction")
+	cmd.Flags().StringVar(&pf.triageInstruction, "triage-instruction", "", "Override the triage agent instruction (replaces the built-in guidance)")
+	cmd.Flags().StringVar(&pf.staticInstruction, "static-instruction", "", "Override the static analysis agent instruction"+instructionOverrideHelp)
+	cmd.Flags().StringVar(&pf.securityInstruction, "security-instruction", "", "Override the security agent instruction"+instructionOverrideHelp)
+	cmd.Flags().StringVar(&pf.summaryInstruction, "summary-instruction", "", "Override the summary agent instruction"+instructionOverrideHelp)
 }
 
 func readDiff(args []string) (string, error) {
