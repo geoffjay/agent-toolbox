@@ -48,3 +48,24 @@
   grouped into `prOptions`; missing trailing newlines in the new docs.
   Not changed: the Taskfile binary name (intentional per author) and
   `Program.Run` swallowing deliberate interruptions (documented behavior).
+
+## 2026-08-31
+* **Review response (round 2)**: Restored the plain gate's decision
+  prompt (`decision [approve/revise/abort]:`) dropped in the TUI rework;
+  wrapped the two remaining bare `return err` boundaries in `runPipeline`;
+  added a control-byte sanitizer in `cmd/presenter.go`, applied inside
+  both surfaces (a wrapping decorator delegating interface errors tripped
+  `wrapcheck`), so a crafted PR title cannot inject ANSI/OSC sequences —
+  e.g. an OSC 52 clipboard rewrite — into the reviewer's terminal;
+  `printReport` falls back to the raw markdown when the glamour render
+  has not landed before the user quits; run-log names zero-pad the pid so
+  pruning order matches creation order; `TestPlainConfirmPrintsBody` pipes
+  stdin so it cannot block under a PTY; reworded the duplicated
+  "post review" wrap; removed a dead `var _ io.Writer`.
+* **go-sec step**: Enabled `Builtins.go_sec` in `hk.pkl`. The globally
+  installed gosec (v2.22.4, built with go1.24) fails on go 1.27 with
+  `internal error: package "..." without types`; pinned
+  `aqua:securego/gosec = 2.29.0` in `mise.toml` so the step runs a current
+  binary. The five findings it raises on this codebase are deliberate
+  patterns (shell-free git subprocesses, repo-scoped file reads, the
+  cache-dir log file) and carry `#nosec` annotations with rationale.

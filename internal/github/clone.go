@@ -85,7 +85,7 @@ func (c *Client) pinHead(ctx context.Context, dir, cloneURL, sha string) error {
 // runGit runs git with args in dir. The command is cancelled with ctx,
 // and failures carry the tail of the command's stderr for context.
 func runGit(ctx context.Context, dir string, args ...string) error {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- variable parts are the GitHub API clone URL and a validSHA-checked SHA.
 	cmd.Dir = dir
 	if _, err := cmd.Output(); err != nil {
 		if ee, ok := errors.AsType[*exec.ExitError](err); ok {
