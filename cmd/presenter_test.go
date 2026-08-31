@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -30,6 +32,20 @@ func TestOpenRunLog(t *testing.T) {
 	}
 	if got := info.Mode().Perm(); got != 0o600 {
 		t.Errorf("log file perms = %o, want 600", got)
+	}
+	if base := filepath.Base(path); !strings.HasSuffix(base, fmt.Sprintf("-%08d.log", os.Getpid())) {
+		t.Errorf("log name = %q, want a zero-padded pid so names sort in creation order", base)
+	}
+}
+
+// TestSanitize guards the control-byte stripper: escape sequences from
+// untrusted PR text must never reach a terminal, while ordinary text —
+// newlines, tabs, and multibyte runes included — passes through.
+func TestSanitize(t *testing.T) {
+	got := sanitize("ok\ttext\nwith é ✓\r\x1b]52;c;aGVsbG8=\x07\u0085\a")
+	want := "ok\ttext\nwith é ✓\r]52;c;aGVsbG8="
+	if got != want {
+		t.Errorf("sanitize() = %q, want %q", got, want)
 	}
 }
 

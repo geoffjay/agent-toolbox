@@ -74,6 +74,9 @@ func TestPromptGateAnswer(t *testing.T) {
 			if !strings.Contains(out.String(), "a.go:1") {
 				t.Errorf("prompt did not render the request payload:\n%s", out.String())
 			}
+			if !strings.Contains(out.String(), "approve/revise/abort") {
+				t.Errorf("prompt did not show the decision choices:\n%s", out.String())
+			}
 		})
 	}
 }

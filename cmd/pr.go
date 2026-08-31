@@ -265,7 +265,7 @@ func postReview(ctx context.Context, client *github.Client, ref github.RepoRef, 
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("post review: %w", err)
+		return fmt.Errorf("submit review: %w", err)
 	}
 	p.Note(fmt.Sprintf("review posted: %s", resp.HTMLURL))
 	return nil

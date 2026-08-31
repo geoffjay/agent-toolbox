@@ -107,7 +107,13 @@ func Run(ctx context.Context, work func(ctx context.Context, p *Program) error) 
 	// The report was displayed in the interface; print it once more so it
 	// survives in the terminal scrollback after the alt screen closes.
 	if fm, ok := final.(model); ok && strings.TrimSpace(fm.report) != "" {
-		printReport(fm.rendered)
+		// Quitting can land between Finish and the glamour render; fall
+		// back to the raw markdown so the report is not lost.
+		content := fm.rendered
+		if content == "" {
+			content = fm.report
+		}
+		printReport(content)
 	}
 	return nil
 }

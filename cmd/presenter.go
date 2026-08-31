@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -61,27 +60,27 @@ type plainPresenter struct {
 }
 
 func (p plainPresenter) Start(label string) {
-	fmt.Fprintln(os.Stderr, label)
+	fmt.Fprintln(os.Stderr, sanitize(label))
 }
 
 func (p plainPresenter) Milestone(text string) {
-	fmt.Fprintln(os.Stderr, text)
+	fmt.Fprintln(os.Stderr, sanitize(text))
 }
 
 func (p plainPresenter) Activity(string) {}
 
 func (p plainPresenter) Stream(agent, text string) {
 	if agent == agents.SummaryAgentName || p.lf.level() <= slog.LevelInfo {
-		fmt.Print(text)
+		fmt.Print(sanitize(text))
 	}
 }
 
 func (p plainPresenter) Warn(text string) {
-	fmt.Fprintln(os.Stderr, text)
+	fmt.Fprintln(os.Stderr, sanitize(text))
 }
 
 func (p plainPresenter) Note(text string) {
-	fmt.Fprintln(os.Stderr, text)
+	fmt.Fprintln(os.Stderr, sanitize(text))
 }
 
 func (p plainPresenter) Finish(report string) {
@@ -92,10 +91,12 @@ func (p plainPresenter) Finish(report string) {
 }
 
 func (p plainPresenter) Gate(req ui.GateRequest) (map[string]any, error) {
+	req.Message, req.Payload = sanitize(req.Message), sanitize(req.Payload)
 	return promptGate(req)
 }
 
 func (p plainPresenter) Confirm(c ui.Confirmation) (bool, error) {
+	c.Title, c.Detail, c.Body = sanitize(c.Title), sanitize(c.Detail), sanitize(c.Body)
 	fmt.Fprintln(os.Stderr, c.Title)
 	if c.Detail != "" {
 		fmt.Fprintln(os.Stderr, c.Detail)
@@ -115,14 +116,15 @@ type tuiPresenter struct {
 	p *ui.Program
 }
 
-func (t tuiPresenter) Start(label string)        { t.p.Start(label) }
-func (t tuiPresenter) Milestone(text string)     { t.p.Activity(text) }
-func (t tuiPresenter) Activity(text string)      { t.p.Activity(text) }
-func (t tuiPresenter) Stream(agent, text string) { t.p.Stream(agent, text) }
-func (t tuiPresenter) Warn(text string)          { t.p.Warn(text) }
-func (t tuiPresenter) Note(text string)          { t.p.Note(text) }
-func (t tuiPresenter) Finish(report string)      { t.p.Finish(report) }
+func (t tuiPresenter) Start(label string)        { t.p.Start(sanitize(label)) }
+func (t tuiPresenter) Milestone(text string)     { t.p.Activity(sanitize(text)) }
+func (t tuiPresenter) Activity(text string)      { t.p.Activity(sanitize(text)) }
+func (t tuiPresenter) Stream(agent, text string) { t.p.Stream(sanitize(agent), sanitize(text)) }
+func (t tuiPresenter) Warn(text string)          { t.p.Warn(sanitize(text)) }
+func (t tuiPresenter) Note(text string)          { t.p.Note(sanitize(text)) }
+func (t tuiPresenter) Finish(report string)      { t.p.Finish(sanitize(report)) }
 func (t tuiPresenter) Gate(req ui.GateRequest) (map[string]any, error) {
+	req.Message, req.Payload = sanitize(req.Message), sanitize(req.Payload)
 	reply, err := t.p.Gate(req)
 	if err != nil {
 		return nil, fmt.Errorf("gate: %w", err)
@@ -131,11 +133,31 @@ func (t tuiPresenter) Gate(req ui.GateRequest) (map[string]any, error) {
 }
 
 func (t tuiPresenter) Confirm(c ui.Confirmation) (bool, error) {
+	c.Title, c.Detail, c.Body = sanitize(c.Title), sanitize(c.Detail), sanitize(c.Body)
 	ok, err := t.p.Confirm(c)
 	if err != nil {
 		return false, fmt.Errorf("confirm: %w", err)
 	}
 	return ok, nil
+}
+
+// sanitize strips terminal control runes from s — C0 controls, DEL, and
+// C1 controls — keeping \n, \r, and \t. Every untrusted string rendered on
+// a surface crosses it first: PR titles, streamed findings, and gate
+// payloads are attacker-influenced, and a crafted PR could otherwise
+// inject escape sequences (e.g. an OSC 52 clipboard rewrite) into the
+// reviewer's terminal. Multibyte text is preserved.
+func sanitize(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\n' || r == '\r' || r == '\t':
+			return r
+		case r < 0x20 || (r >= 0x7f && r <= 0x9f):
+			return -1
+		default:
+			return r
+		}
+	}, s)
 }
 
 // isTerminal reports whether f is an interactive terminal.
@@ -202,10 +224,11 @@ func openRunLog() (*os.File, string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, "", fmt.Errorf("create log dir: %w", err)
 	}
-	// The timestamp prefix sorts lexically in creation order; the pid
-	// keeps same-second runs from colliding.
-	path := filepath.Join(dir, "run-"+time.Now().UTC().Format("20060102T150405")+"-"+strconv.Itoa(os.Getpid())+".log")
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	// The zero-padded pid keeps the whole name sorting lexically in
+	// creation order — including same-second runs with different pid
+	// widths — so pruning drops the oldest, never the run in flight.
+	path := filepath.Join(dir, "run-"+time.Now().UTC().Format("20060102T150405")+"-"+fmt.Sprintf("%08d", os.Getpid())+".log")
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) // #nosec G304 -- path is built from the cache dir, a timestamp, and the pid.
 	if err != nil {
 		return nil, "", fmt.Errorf("open log file: %w", err)
 	}
@@ -241,5 +264,3 @@ func pruneRunLogs(dir string) {
 		_ = os.Remove(filepath.Join(dir, name))
 	}
 }
-
-var _ io.Writer = os.Stderr

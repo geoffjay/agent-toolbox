@@ -307,7 +307,7 @@ func runPipeline(ctx context.Context, in runPipelineInput, p Presenter) (string,
 		for ev, err := range r.Run(ctx, userID, sessionID, msg, agentRunConfig(), runOpts...) {
 			if err != nil {
 				stats.logActivities()
-				return output.String(), err
+				return output.String(), fmt.Errorf("run agents: %w", err)
 			}
 			if ev == nil {
 				continue
@@ -357,7 +357,7 @@ func runPipeline(ctx context.Context, in runPipelineInput, p Presenter) (string,
 		})
 		if err != nil {
 			stats.logActivities()
-			return output.String(), err
+			return output.String(), fmt.Errorf("collect gate decision: %w", err)
 		}
 		slog.Info("resuming pipeline", "interrupt", pending.InterruptID)
 		msg = resumeMessage(pending.InterruptID, answer)
@@ -408,6 +408,7 @@ func promptGateAnswer(in io.Reader, out io.Writer, req ui.GateRequest) (map[stri
 	if req.Payload != "" {
 		_, _ = fmt.Fprintln(out, req.Payload)
 	}
+	_, _ = fmt.Fprint(out, "decision [approve/revise/abort]: ")
 	// One buffered reader for the whole interaction: a second reader over
 	// the same stream would lose whatever the first had buffered ahead.
 	reader := bufio.NewReader(in)

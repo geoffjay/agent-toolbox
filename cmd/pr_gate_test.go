@@ -46,21 +46,30 @@ func TestConfirmPostInteractivePTY(t *testing.T) {
 // With a non-terminal stdin the prompt declines (fail closed), but the
 // title, detail, and body are printed before that check.
 func TestPlainConfirmPrintsBody(t *testing.T) {
-	r, w, err := os.Pipe()
+	// Pipe both stdin and stderr. The swapped stdin pins the fail-closed
+	// path on every environment — under a PTY the real stdin would make
+	// readApproval block waiting for a typed answer.
+	sr, sw, err := os.Pipe()
 	if err != nil {
-		t.Fatalf("pipe: %v", err)
+		t.Fatalf("stdin pipe: %v", err)
 	}
-	stderr := os.Stderr
-	os.Stderr = w
+	er, ew, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("stderr pipe: %v", err)
+	}
+	stdin, stderr := os.Stdin, os.Stderr
+	os.Stdin, os.Stderr = sr, ew
 	_, confirmErr := plainPresenter{}.Confirm(ui.Confirmation{
 		Title:  "post this review to geoffjay/graph-review#42?",
 		Detail: "event: COMMENT (1 inline comment)",
 		Body:   "## Verdict\n\nLGTM with one nit.",
 	})
-	os.Stderr = stderr
-	_ = w.Close()
+	os.Stdin, os.Stderr = stdin, stderr
+	_ = sw.Close()
+	_ = sr.Close()
+	_ = ew.Close()
 	var out bytes.Buffer
-	_, _ = io.Copy(&out, r)
+	_, _ = io.Copy(&out, er)
 
 	if confirmErr == nil {
 		t.Error("Confirm() succeeded with non-terminal stdin; want fail-closed error")
