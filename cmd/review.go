@@ -248,13 +248,14 @@ func runPipeline(ctx context.Context, in runPipelineInput, p Presenter) (string,
 	}
 
 	root, err := graph.New(ctx, graph.Config{
-		Model:              m,
-		Tools:              reviewTools,
-		TriageInstruction:  in.triageInstruction,
-		StaticInstruction:  in.staticInstruction,
-		SummaryInstruction: in.summaryInstruction,
-		RulesDir:           rulesDir,
-		FindingsGate:       in.findingsGate,
+		Model:               m,
+		Tools:               reviewTools,
+		TriageInstruction:   in.triageInstruction,
+		StaticInstruction:   in.staticInstruction,
+		SecurityInstruction: in.securityInstruction,
+		SummaryInstruction:  in.summaryInstruction,
+		RulesDir:            rulesDir,
+		FindingsGate:        in.findingsGate,
 	})
 	if err != nil {
 		return "", fmt.Errorf("build pipeline: %w", err)
@@ -582,15 +583,20 @@ func addModelFlags(cmd *cobra.Command, mf *modelFlags) {
 	cmd.Flags().StringVar(&mf.baseURL, "base-url", "", "Base URL for the endpoint (env OPENAI_BASE_URL or ANTHROPIC_BASE_URL)")
 }
 
+// instructionOverrideHelp is the shared suffix for the agent-instruction
+// override flags: an override replaces the built-in default, which
+// carries the ASD-STE100 style rules.
+const instructionOverrideHelp = " (replaces the built-in guidance, including its ASD-STE100 style rules)"
+
 // addPipelineFlags wires the shared pipeline flags onto a command.
 func addPipelineFlags(cmd *cobra.Command, pf *pipelineFlags) {
 	cmd.Flags().BoolVar(&pf.noTools, "no-tools", false, "Disable repo-inspection and PR tools on the reviewer agents")
 	cmd.Flags().StringVar(&pf.rulesDir, "rules-dir", "", "Path to repository rules directory (default: .review/rules relative to repo root)")
 	cmd.Flags().BoolVar(&pf.findingsGate, "findings-gate", false, "Pause after the reviewers and require a human to approve the findings (revise loops the reviewers with your feedback)")
-	cmd.Flags().StringVar(&pf.triageInstruction, "triage-instruction", "", "Override the triage agent instruction")
-	cmd.Flags().StringVar(&pf.staticInstruction, "static-instruction", "", "Override the static analysis agent instruction")
-	cmd.Flags().StringVar(&pf.securityInstruction, "security-instruction", "", "Override the security agent instruction")
-	cmd.Flags().StringVar(&pf.summaryInstruction, "summary-instruction", "", "Override the summary agent instruction")
+	cmd.Flags().StringVar(&pf.triageInstruction, "triage-instruction", "", "Override the triage agent instruction (replaces the built-in guidance)")
+	cmd.Flags().StringVar(&pf.staticInstruction, "static-instruction", "", "Override the static analysis agent instruction"+instructionOverrideHelp)
+	cmd.Flags().StringVar(&pf.securityInstruction, "security-instruction", "", "Override the security agent instruction"+instructionOverrideHelp)
+	cmd.Flags().StringVar(&pf.summaryInstruction, "summary-instruction", "", "Override the summary agent instruction"+instructionOverrideHelp)
 }
 
 func readDiff(args []string) (string, error) {

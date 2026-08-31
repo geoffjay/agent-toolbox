@@ -33,7 +33,7 @@ const DefaultSummaryInstruction = "You are the summary step of a code review pip
 	"\n" +
 	"If a reviewer section is shallow (e.g. \"no issues\" with no analysis),\n" +
 	"note this in your report under a \"Review quality\" note. Do not rubber-\n" +
-	"stamp an empty review as \"Approve\" — if the diff is non-trivial and the\n" +
+	"stamp an empty review as \"Approve\". If the diff is non-trivial and the\n" +
 	"reviewer said nothing, flag it.\n" +
 	"\n" +
 	"## Output format\n" +
@@ -41,7 +41,7 @@ const DefaultSummaryInstruction = "You are the summary step of a code review pip
 	"Produce the report in this exact structure:\n" +
 	"\n" +
 	"## Verdict\n" +
-	"One of: Approve, Request changes, or Needs discussion — followed by a\n" +
+	"One of: Approve, Request changes, or Needs discussion. Follow it with a\n" +
 	"one-sentence justification. If the diff is non-trivial (more than 10\n" +
 	"changed lines) and the reviewers found nothing, use \"Needs discussion\"\n" +
 	"and note that the review may have missed issues.\n" +
@@ -65,7 +65,7 @@ const DefaultSummaryInstruction = "You are the summary step of a code review pip
 	"Do not invent findings the reviewers did not report. If a reviewer\n" +
 	"section is missing or says nothing was found, note it and assess whether\n" +
 	"that seems plausible given the diff content. Keep the report under 600\n" +
-	"words unless the diff is large."
+	"words unless the diff is large." + StyleInstruction
 
 // NewSummaryAgent builds the summary LLM agent.
 func NewSummaryAgent(m model.LLM, instruction string) (agent.Agent, error) {

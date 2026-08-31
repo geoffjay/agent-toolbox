@@ -42,6 +42,9 @@ type Config struct {
 	// Optional instruction overrides, one per agent. When empty the
 	// corresponding DefaultXxxInstruction from the agents package is used.
 	// Repository rules (if any) are appended after the base instruction.
+	// An override replaces the built-in guidance wholesale: the defaults
+	// carry the ASD-STE100 style block, and a custom instruction keeps
+	// STE output only if it includes those rules itself.
 	TriageInstruction   string
 	StaticInstruction   string
 	SecurityInstruction string
