@@ -169,6 +169,11 @@ url = "https://github.com/goreleaser/goreleaser/releases/download/v2.18.0/gorele
 url_api = "https://api.github.com/repos/goreleaser/goreleaser/releases/assets/526873786"
 provenance = "github-attestations"
 
+[[tools.hk]]
+version = "1.54.1"
+backend = "aqua:jdx/hk"
+specifiers = ["1.54.1"]
+
 [[tools.task]]
 version = "3.53.1"
 backend = "aqua:go-task/task"
