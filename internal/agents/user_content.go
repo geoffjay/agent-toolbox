@@ -65,9 +65,18 @@ func EnsureUserContent(name string) llmagent.BeforeModelCallback {
 		slog.Warn("llm request was missing the diff; restored the agent's user content",
 			"agent", name,
 			"contents", len(req.Contents))
+		// Copy the parts by value: the seed must not alias the invocation's
+		// user content, so later request mutations cannot reach it.
+		parts := make([]*genai.Part, len(user.Parts))
+		for i, part := range user.Parts {
+			if part != nil {
+				cp := *part
+				parts[i] = &cp
+			}
+		}
 		seed := &genai.Content{
 			Role:  genai.RoleUser,
-			Parts: append([]*genai.Part(nil), user.Parts...),
+			Parts: parts,
 		}
 		req.Contents = append([]*genai.Content{seed}, req.Contents...)
 		return nil, nil

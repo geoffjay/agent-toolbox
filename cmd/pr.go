@@ -88,7 +88,11 @@ pass --plain for the classic streaming output.`,
 					pipelineFlags: pf,
 					sessionID:     sessionID,
 					noClone:       noClone,
-				}, cloneRepo, postComments, assumeYes, p)
+				}, prOptions{
+					cloneRepo:    cloneRepo,
+					postComments: postComments,
+					assumeYes:    assumeYes,
+				}, p)
 			}
 			return dispatch(ctx, lf, plain, work)
 		},
@@ -107,13 +111,19 @@ pass --plain for the classic streaming output.`,
 	return cmd
 }
 
-// readApproval prompts on out and reads a yes/no answer from in. Any
+// prOptions carries the fetch-and-post toggles that configure reviewPR
+// but are not part of the pipeline input itself.
+type prOptions struct {
+	cloneRepo    string // --clone-repo: use an existing checkout instead of cloning
+	postComments bool   // --post-comments: post the review after confirmation
+	assumeYes    bool   // --assume-yes: skip the confirmation prompt (CI)
+}
 
 // reviewPR fetches the PR (and clones the repo when needed), runs the
 // pipeline over its diff, presents the report, and optionally posts it
 // as a GitHub review after human confirmation.
-func reviewPR(ctx context.Context, client *github.Client, ref github.RepoRef, number int, in runPipelineInput, cloneRepo string, postComments, assumeYes bool, p Presenter) error {
-	p.Activity(fmt.Sprintf("fetching PR %s#%d", ref, number))
+func reviewPR(ctx context.Context, client *github.Client, ref github.RepoRef, number int, in runPipelineInput, opts prOptions, p Presenter) error {
+	p.Milestone(fmt.Sprintf("fetching PR %s#%d", ref, number))
 	pr, err := client.GetPR(ctx, ref, number)
 	if err != nil {
 		return fmt.Errorf("fetch PR: %w", err)
@@ -137,8 +147,8 @@ func reviewPR(ctx context.Context, client *github.Client, ref github.RepoRef, nu
 	case in.noClone:
 		// Tools fall back to the working directory.
 		repoRoot, _ = os.Getwd()
-	case cloneRepo != "":
-		abs, err := filepath.Abs(cloneRepo)
+	case opts.cloneRepo != "":
+		abs, err := filepath.Abs(opts.cloneRepo)
 		if err != nil {
 			return fmt.Errorf("resolve clone path: %w", err)
 		}
@@ -148,7 +158,7 @@ func reviewPR(ctx context.Context, client *github.Client, ref github.RepoRef, nu
 		if len(shortSHA) > 7 {
 			shortSHA = shortSHA[:7]
 		}
-		p.Activity(fmt.Sprintf("cloning %s at %s", pr.Head.Repo.FullName, shortSHA))
+		p.Milestone(fmt.Sprintf("cloning %s at %s", pr.Head.Repo.FullName, shortSHA))
 		dir, cleanup, err := client.CloneRepo(ctx, pr)
 		if err != nil {
 			return fmt.Errorf("clone PR repo: %w", err)
@@ -170,16 +180,15 @@ func reviewPR(ctx context.Context, client *github.Client, ref github.RepoRef, nu
 	in.state = state
 	in.label = label
 	in.repoRoot = repoRoot
-
 	report, err := runPipeline(ctx, in, p)
 	if err != nil {
-		return err
+		return fmt.Errorf("run pipeline: %w", err)
 	}
 	p.Finish(report)
 
-	if postComments {
-		if err := postReview(ctx, client, ref, number, report, assumeYes, p); err != nil {
-			return err
+	if opts.postComments {
+		if err := postReview(ctx, client, ref, number, report, opts.assumeYes, p); err != nil {
+			return fmt.Errorf("post review: %w", err)
 		}
 	}
 	return nil
@@ -242,7 +251,7 @@ func postReview(ctx context.Context, client *github.Client, ref github.RepoRef, 
 		p.Note("review not posted")
 		return nil
 	}
-	p.Activity("posting review to GitHub")
+	p.Milestone("posting review to GitHub")
 	resp, err := client.PostReview(ctx, ref, number, req)
 	if err != nil {
 		// A residual anchor rejection (422 "Line could not be
@@ -278,5 +287,6 @@ func postConfirmation(ref github.RepoRef, number int, req *github.PostReviewRequ
 	return ui.Confirmation{
 		Title:  fmt.Sprintf("post this review to %s#%d?", ref, number),
 		Detail: b.String(),
+		Body:   req.Body,
 	}
 }

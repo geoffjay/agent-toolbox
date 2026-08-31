@@ -129,8 +129,13 @@ func TestEnsureUserContentPrependsCopy(t *testing.T) {
 	}
 	// The seed must not alias the caller's parts: later request mutations
 	// must never reach the invocation's user content.
-	if &req.Contents[0].Parts[0] == &ctx.user.Parts[0] {
+	seeded := req.Contents[0].Parts[0]
+	if seeded == ctx.user.Parts[0] {
 		t.Error("seeded content aliases ctx.UserContent() parts")
+	}
+	seeded.Text = "mutated"
+	if ctx.user.Parts[0].Text == "mutated" {
+		t.Error("mutating the seeded part reached the invocation's user content")
 	}
 }
 

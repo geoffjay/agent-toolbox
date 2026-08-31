@@ -67,6 +67,7 @@ func (m *scriptedModel) GenerateContent(_ context.Context, req *model.LLMRequest
 		}}, nil)
 	}
 }
+
 func contentText(c *genai.Content) string {
 	if c == nil {
 		return ""

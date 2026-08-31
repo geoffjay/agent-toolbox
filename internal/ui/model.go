@@ -65,9 +65,8 @@ type model struct {
 	gateReply    chan map[string]any
 	confirmReply chan bool
 
-	done     bool  // report (or empty finish) delivered
-	userQuit bool  // user pressed q/ctrl+c
-	failed   error // terminal failure
+	done   bool  // report (or empty finish) delivered
+	failed error // terminal failure
 }
 
 func newModel() model {
@@ -114,17 +113,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.form == nil {
 			switch msg.String() {
 			case "q", "ctrl+c":
-				m.userQuit = true
 				return m, tea.Quit
 			}
 		}
 
 	case spinner.TickMsg:
-		if m.form != nil || !m.busy {
-			return m, nil // freeze the spinner while paused or finished
-		}
+		// Always answer the tick so the animation chain never dies: a
+		// dropped tick freezes the spinner for the rest of the run.
+		// Pausing is visual — render hides the spinner while a form is
+		// open or the run has finished — not a stopped clock.
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
+		if m.form != nil {
+			// huh fields run their own spinner while loading; keep
+			// that chain alive too.
+			_, formCmd := m.form.Update(msg)
+			cmd = tea.Batch(cmd, formCmd)
+		}
 		return m, cmd
 
 	case startMsg:
@@ -298,7 +303,14 @@ func (m *model) openForm(msg tea.Msg) {
 	case gateMsg:
 		m.formKind = formGate
 		m.gateReply = msg.reply
-		m.fs.decision = agents.DecisionApprove
+		if msg.req.Payload != "" {
+			// The decision is about the payload; surface it above the
+			// form so the human approves what they can read.
+			m.appendStream("findings", msg.req.Payload)
+		}
+		// Preselect abort: a reflexive enter fails closed, matching the
+		// plain surface, which requires an explicit typed decision.
+		m.fs.decision = agents.DecisionAbort
 		m.fs.feedback = ""
 		m.form = huh.NewForm(
 			huh.NewGroup(

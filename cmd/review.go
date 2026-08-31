@@ -41,8 +41,8 @@ type modelFlags struct {
 }
 
 // loggingFlags carries the diagnostic log controls shared by every review
-// subcommand. The plain surface logs to stderr; the TUI surface logs to
-// debug.log because bubbletea owns the terminal.
+// subcommand. The plain surface logs to stderr; the TUI surface logs to a
+// per-run file in the user cache dir because bubbletea owns the terminal.
 type loggingFlags struct {
 	verbose int  // -v count
 	debug   bool // --debug
@@ -64,7 +64,7 @@ func (lf loggingFlags) level() slog.Level {
 
 func addLoggingFlags(cmd *cobra.Command, lf *loggingFlags) {
 	cmd.Flags().CountVarP(&lf.verbose, "verbose", "v",
-		"Increase stderr log verbosity: -v shows pipeline flow, -vv adds raw agent output and tool activity")
+		"Increase log verbosity: -v shows pipeline flow, -vv adds raw agent output and tool activity")
 	cmd.Flags().BoolVar(&lf.debug, "debug", false,
 		"Log debug detail: every model event, tool call arguments, and tool results")
 }
@@ -163,7 +163,7 @@ pass --plain for the classic streaming output.`,
 					repoRoot:      absRepo,
 				}, p)
 				if err != nil {
-					return err
+					return fmt.Errorf("run pipeline: %w", err)
 				}
 				p.Finish(report)
 				return nil

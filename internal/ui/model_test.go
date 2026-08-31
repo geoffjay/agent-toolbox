@@ -71,7 +71,7 @@ func sized(m model) model {
 	return drive(m, tea.WindowSizeMsg{Width: 100, Height: 40})
 }
 
-func TestGateFormApproveSubmitsDefault(t *testing.T) {
+func TestGateFormPreselectsAbort(t *testing.T) {
 	m := sized(newModel())
 	reply := make(chan map[string]any, 1)
 	m = drive(m, gateMsg{
@@ -82,12 +82,41 @@ func TestGateFormApproveSubmitsDefault(t *testing.T) {
 	if m.form == nil {
 		t.Fatal("gate form not opened")
 	}
-	if got := m.View().Content; !strings.Contains(got, "Approve the findings?") {
+	got := m.View().Content
+	if !strings.Contains(got, "Approve the findings?") {
 		t.Errorf("form view missing gate message:\n%s", got)
 	}
+	if content := m.viewport.GetContent(); !strings.Contains(content, "findings…") {
+		t.Errorf("gate payload not surfaced for the decision:\n%s", content)
+	}
 
-	// The select defaults to approve; enter submits and completes the form.
+	// A reflexive enter submits the preselected safe default: abort,
+	// matching the plain surface's explicit-typed-decision gate.
 	m = drive(m, special(tea.KeyEnter))
+
+	select {
+	case answer := <-reply:
+		if answer["decision"] != agents.DecisionAbort {
+			t.Errorf("decision = %v, want abort", answer["decision"])
+		}
+	default:
+		t.Fatal("no gate reply after submitting the default")
+	}
+	if m.form != nil {
+		t.Error("form still open after submit")
+	}
+}
+
+func TestGateFormApproveRequiresExplicitChoice(t *testing.T) {
+	m := sized(newModel())
+	reply := make(chan map[string]any, 1)
+	m = drive(m, gateMsg{
+		req:   GateRequest{Message: "Approve the findings?"},
+		reply: reply,
+	})
+
+	// Approve sits two options above the abort default.
+	m = drive(m, special(tea.KeyUp), special(tea.KeyUp), special(tea.KeyEnter))
 
 	select {
 	case answer := <-reply:
@@ -100,9 +129,6 @@ func TestGateFormApproveSubmitsDefault(t *testing.T) {
 	default:
 		t.Fatal("no gate reply after submitting approve")
 	}
-	if m.form != nil {
-		t.Error("form still open after submit")
-	}
 }
 
 func TestGateFormReviseCollectsFeedback(t *testing.T) {
@@ -113,8 +139,9 @@ func TestGateFormReviseCollectsFeedback(t *testing.T) {
 		reply: reply,
 	})
 
-	// Down moves the cursor to "Revise", enter reveals the feedback field.
-	m = drive(m, special(tea.KeyDown), special(tea.KeyEnter))
+	// Up moves the cursor from the abort default to "Revise"; enter
+	// reveals the feedback field.
+	m = drive(m, special(tea.KeyUp), special(tea.KeyEnter))
 	if m.form == nil {
 		t.Fatal("form closed before feedback was submitted")
 	}
@@ -297,11 +324,47 @@ func TestStreamAndFinishFlow(t *testing.T) {
 		t.Error("streaming text leaked into the report view")
 	}
 
-	// The empty-report case keeps the streaming view.
-	m = drive(m, warnMsg{text: "no report"})
-	if strings.Contains(m.viewport.GetContent(), "looking at the diff") &&
-		m.report != "" {
-		t.Error("empty report should not have replaced the streaming view")
+	// The empty-report case keeps the streaming view: a fresh model that
+	// finishes without a report neither renders nor replaces it.
+	fresh := sized(newModel())
+	fresh = drive(fresh, streamMsg{agent: "triage", text: "looking at the diff"})
+	ftm, fcmd := fresh.Update(finishMsg{})
+	fresh = ftm.(model)
+	if fcmd != nil {
+		t.Error("empty report requested a render command")
+	}
+	if !strings.Contains(fresh.viewport.GetContent(), "looking at the diff") {
+		t.Errorf("empty report replaced the streaming view:\n%s", fresh.viewport.GetContent())
+	}
+}
+
+// TestSpinnerTickChainSurvivesPause guards the tick chain: a dropped
+// spinner tick freezes the animation for the rest of the run.
+func TestSpinnerTickChainSurvivesPause(t *testing.T) {
+	m := sized(newModel())
+	m.busy = true
+
+	tm, cmd := m.Update(m.spinner.Tick())
+	m = tm.(model)
+	if cmd == nil {
+		t.Fatal("busy model dropped the spinner tick")
+	}
+
+	// While a gate form is open the chain must continue.
+	reply := make(chan map[string]any, 1)
+	m = drive(m, gateMsg{req: GateRequest{Message: "gate?"}, reply: reply})
+	tm, cmd = m.Update(m.spinner.Tick())
+	m = tm.(model)
+	if cmd == nil {
+		t.Fatal("paused model dropped the spinner tick")
+	}
+
+	// And after the run finishes.
+	m = drive(m, finishMsg{})
+	tm, cmd = m.Update(m.spinner.Tick())
+	m = tm.(model)
+	if cmd == nil {
+		t.Fatal("finished model dropped the spinner tick")
 	}
 }
 

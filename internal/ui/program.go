@@ -24,6 +24,11 @@ type GateRequest struct {
 type Confirmation struct {
 	Title  string
 	Detail string
+
+	// Body carries the full text the decision is about (e.g. the review
+	// body being posted). The plain surface prints it before prompting;
+	// the TUI surface already shows the report in its viewport.
+	Body string
 }
 
 // Messages exchanged between the pipeline goroutine and the model.
@@ -96,7 +101,7 @@ func Run(ctx context.Context, work func(ctx context.Context, p *Program) error) 
 		if errors.Is(workErr, context.Canceled) {
 			return nil // deliberate interruption, not a failure
 		}
-		return workErr
+		return fmt.Errorf("review work: %w", workErr)
 	}
 
 	// The report was displayed in the interface; print it once more so it

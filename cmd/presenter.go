@@ -6,8 +6,11 @@ import (
 	"io"
 	"log/slog"
 	"os"
-
-	tea "charm.land/bubbletea/v2"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/geoffjay/graph-review/internal/agents"
 	"github.com/geoffjay/graph-review/internal/ui"
@@ -20,6 +23,11 @@ import (
 type Presenter interface {
 	// Start announces the run with a descriptive label.
 	Start(label string)
+
+	// Milestone reports a high-signal progress line (fetching the PR,
+	// cloning, posting). The plain surface prints it to stderr; the
+	// TUI shows it like any other activity.
+	Milestone(text string)
 
 	// Activity reports the current pipeline step (shown beside the
 	// TUI spinner; ignored by the plain surface).
@@ -56,6 +64,10 @@ func (p plainPresenter) Start(label string) {
 	fmt.Fprintln(os.Stderr, label)
 }
 
+func (p plainPresenter) Milestone(text string) {
+	fmt.Fprintln(os.Stderr, text)
+}
+
 func (p plainPresenter) Activity(string) {}
 
 func (p plainPresenter) Stream(agent, text string) {
@@ -88,6 +100,9 @@ func (p plainPresenter) Confirm(c ui.Confirmation) (bool, error) {
 	if c.Detail != "" {
 		fmt.Fprintln(os.Stderr, c.Detail)
 	}
+	if c.Body != "" {
+		fmt.Fprintln(os.Stderr, c.Body)
+	}
 	stat, err := os.Stdin.Stat()
 	if err != nil || stat.Mode()&os.ModeCharDevice == 0 {
 		return false, fmt.Errorf("cannot prompt for approval: stdin is not a terminal; re-run interactively or pass --assume-yes")
@@ -101,6 +116,7 @@ type tuiPresenter struct {
 }
 
 func (t tuiPresenter) Start(label string)        { t.p.Start(label) }
+func (t tuiPresenter) Milestone(text string)     { t.p.Activity(text) }
 func (t tuiPresenter) Activity(text string)      { t.p.Activity(text) }
 func (t tuiPresenter) Stream(agent, text string) { t.p.Stream(agent, text) }
 func (t tuiPresenter) Warn(text string)          { t.p.Warn(text) }
@@ -135,11 +151,7 @@ func isTerminal(f *os.File) bool {
 func dispatch(ctx context.Context, lf loggingFlags, plain bool, work func(ctx context.Context, p Presenter) error) error {
 	interactive := !plain && isTerminal(os.Stdout)
 
-	closer, err := setupLogging(lf, interactive)
-	if err != nil {
-		return err
-	}
-	defer closer()
+	defer setupLogging(lf, interactive)()
 	if !interactive {
 		return work(ctx, plainPresenter{lf: lf})
 	}
@@ -152,24 +164,82 @@ func dispatch(ctx context.Context, lf loggingFlags, plain bool, work func(ctx co
 }
 
 // setupLogging installs the process-wide slog default. The plain surface
-// logs to stderr; the TUI surface logs to debug.log because bubbletea
-// occupies the terminal (the DEBUG env var additionally forces debug
-// level, mirroring the bubbletea logging example).
-func setupLogging(lf loggingFlags, tui bool) (func(), error) {
+// logs to stderr; the TUI surface logs to a per-run file under the user
+// cache dir because bubbletea occupies the terminal. Log output can
+// carry the reviewed diffs and file contents, so the file is private
+// (0600), unique per run, and old runs are pruned; the -v/--debug flags
+// alone control the level.
+func setupLogging(lf loggingFlags, tui bool) func() {
 	if !tui {
 		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lf.level()})))
-		return func() {}, nil
+		return func() {}
 	}
-	f, err := tea.LogToFile("debug.log", "debug")
+	w := io.Discard
+	closer := func() {}
+	if f, path, err := openRunLog(); err != nil {
+		// Logging is diagnostics, not the product: run without it
+		// rather than fail before any review work starts.
+		fmt.Fprintf(os.Stderr, "warning: continuing without a log file: %v\n", err)
+	} else {
+		w, closer = f, func() { _ = f.Close() }
+		fmt.Fprintf(os.Stderr, "log: %s\n", path)
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: lf.level()})))
+	return closer
+}
+
+// logKeep bounds how many per-run log files are retained; the oldest
+// are pruned so the log directory cannot grow without end.
+const logKeep = 5
+
+// openRunLog creates the per-run TUI log file in
+// <UserCacheDir>/graph-review/log and prunes older runs.
+func openRunLog() (*os.File, string, error) {
+	dir, err := userLogDir()
 	if err != nil {
-		return nil, fmt.Errorf("open log file: %w", err)
+		return nil, "", fmt.Errorf("resolve log dir: %w", err)
 	}
-	level := lf.level()
-	if os.Getenv("DEBUG") != "" {
-		level = slog.LevelDebug
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, "", fmt.Errorf("create log dir: %w", err)
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{Level: level})))
-	return func() { _ = f.Close() }, nil
+	// The timestamp prefix sorts lexically in creation order; the pid
+	// keeps same-second runs from colliding.
+	path := filepath.Join(dir, "run-"+time.Now().UTC().Format("20060102T150405")+"-"+strconv.Itoa(os.Getpid())+".log")
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return nil, "", fmt.Errorf("open log file: %w", err)
+	}
+	pruneRunLogs(dir)
+	return f, path, nil
+}
+
+// userLogDir is the per-user directory holding TUI run logs.
+func userLogDir() (string, error) {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve cache dir: %w", err)
+	}
+	return filepath.Join(base, "graph-review", "log"), nil
+}
+
+// pruneRunLogs removes the oldest run logs beyond logKeep. Best effort:
+// a pruning failure only leaves an extra file behind.
+func pruneRunLogs(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasPrefix(e.Name(), "run-") || !strings.HasSuffix(e.Name(), ".log") {
+			continue
+		}
+		names = append(names, e.Name())
+	}
+	sort.Strings(names)
+	for _, name := range names[:max(len(names)-logKeep, 0)] {
+		_ = os.Remove(filepath.Join(dir, name))
+	}
 }
 
 var _ io.Writer = os.Stderr

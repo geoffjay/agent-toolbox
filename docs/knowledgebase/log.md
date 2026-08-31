@@ -31,3 +31,20 @@
   `internal/agents/user_content.go` with an `EnsureUserContent()`
   `BeforeModelCallback` on all four agents; recorded in
   `decisions/adk-parallel-turn-input.md`.
+
+## 2026-08-30
+* **Review response**: Worked through the PR 9 review findings. Fixed the
+  TUI log sink (per-run 0600 file under `<UserCacheDir>/graph-review/log`,
+  pruned to the last 5 runs, `DEBUG`-env escalation removed, path shown at
+  startup, verified `tea.LogToFile` is O_APPEND — the security reviewer was
+  right); the spinner tick-chain death after gate pauses/finish (always
+  answer `spinner.TickMsg`, freeze is visual); the fail-open gate default
+  (abort preselected, findings payload surfaced in the viewport); bare
+  `return err` boundaries wrapped; plain surface regressions (milestone
+  lines restored via `Presenter.Milestone`, post confirm prints the review
+  body again); `EnsureUserContent` seed aliasing (parts deep-copied; the
+  old alias assertion compared slice-slot addresses and could not fail);
+  dead `userQuit` state; the unreachable empty-report test; `reviewPR`
+  grouped into `prOptions`; missing trailing newlines in the new docs.
+  Not changed: the Taskfile binary name (intentional per author) and
+  `Program.Run` swallowing deliberate interruptions (documented behavior).

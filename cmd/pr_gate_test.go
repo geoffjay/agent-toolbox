@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"bytes"
+	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/geoffjay/graph-review/internal/ui"
@@ -35,5 +38,41 @@ func TestConfirmPostInteractivePTY(t *testing.T) {
 	want := ptyExpect == "approve"
 	if ok != want {
 		t.Errorf("Confirm() = %v, want %v (PTY_EXPECT=%q)", ok, want, ptyExpect)
+	}
+}
+
+// TestPlainConfirmPrintsBody guards the plain confirm surface: the human
+// is shown the full text they are approving, not just the event summary.
+// With a non-terminal stdin the prompt declines (fail closed), but the
+// title, detail, and body are printed before that check.
+func TestPlainConfirmPrintsBody(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	stderr := os.Stderr
+	os.Stderr = w
+	_, confirmErr := plainPresenter{}.Confirm(ui.Confirmation{
+		Title:  "post this review to geoffjay/graph-review#42?",
+		Detail: "event: COMMENT (1 inline comment)",
+		Body:   "## Verdict\n\nLGTM with one nit.",
+	})
+	os.Stderr = stderr
+	_ = w.Close()
+	var out bytes.Buffer
+	_, _ = io.Copy(&out, r)
+
+	if confirmErr == nil {
+		t.Error("Confirm() succeeded with non-terminal stdin; want fail-closed error")
+	}
+	for _, want := range []string{
+		"post this review to geoffjay/graph-review#42?",
+		"event: COMMENT (1 inline comment)",
+		"## Verdict",
+		"LGTM with one nit.",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("confirm output missing %q:\n%s", want, out.String())
+		}
 	}
 }
