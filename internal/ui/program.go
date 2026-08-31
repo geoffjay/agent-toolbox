@@ -89,7 +89,7 @@ func Run(ctx context.Context, work func(ctx context.Context, p *Program) error) 
 	if runErr != nil &&
 		!errors.Is(runErr, tea.ErrProgramKilled) &&
 		!errors.Is(runErr, tea.ErrInterrupted) {
-		return runErr
+		return fmt.Errorf("run interface: %w", runErr)
 	}
 
 	if workErr != nil {
@@ -178,5 +178,5 @@ func printReport(rendered string) {
 	if s == "" {
 		return
 	}
-	fmt.Fprintln(os.Stdout, s)
+	_, _ = fmt.Fprintln(os.Stdout, s)
 }

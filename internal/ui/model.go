@@ -366,6 +366,9 @@ func (m model) closeForm() (tea.Model, tea.Cmd) {
 		m.gateReply <- reply
 	case formConfirm:
 		m.confirmReply <- !aborted && m.fs.confirm
+	default:
+		// formNone: no form is open, so there is nothing to resolve.
+		return m, nil
 	}
 	m.form = nil
 	m.formKind = formNone

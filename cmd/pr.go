@@ -132,7 +132,7 @@ func reviewPR(ctx context.Context, client *github.Client, ref github.RepoRef, nu
 	}
 
 	// Resolve a repo root for the repo-inspection tools.
-	repoRoot := in.repoRoot
+	var repoRoot string
 	switch {
 	case in.noClone:
 		// Tools fall back to the working directory.
@@ -235,7 +235,7 @@ func postReview(ctx context.Context, client *github.Client, ref github.RepoRef, 
 	if !confirmed {
 		confirmed, err = p.Confirm(postConfirmation(ref, number, req))
 		if err != nil {
-			return err
+			return fmt.Errorf("confirm post: %w", err)
 		}
 	}
 	if !confirmed {

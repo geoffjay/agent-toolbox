@@ -107,11 +107,19 @@ func (t tuiPresenter) Warn(text string)          { t.p.Warn(text) }
 func (t tuiPresenter) Note(text string)          { t.p.Note(text) }
 func (t tuiPresenter) Finish(report string)      { t.p.Finish(report) }
 func (t tuiPresenter) Gate(req ui.GateRequest) (map[string]any, error) {
-	return t.p.Gate(req)
+	reply, err := t.p.Gate(req)
+	if err != nil {
+		return nil, fmt.Errorf("gate: %w", err)
+	}
+	return reply, nil
 }
 
 func (t tuiPresenter) Confirm(c ui.Confirmation) (bool, error) {
-	return t.p.Confirm(c)
+	ok, err := t.p.Confirm(c)
+	if err != nil {
+		return false, fmt.Errorf("confirm: %w", err)
+	}
+	return ok, nil
 }
 
 // isTerminal reports whether f is an interactive terminal.
@@ -135,9 +143,12 @@ func dispatch(ctx context.Context, lf loggingFlags, plain bool, work func(ctx co
 	if !interactive {
 		return work(ctx, plainPresenter{lf: lf})
 	}
-	return ui.Run(ctx, func(ctx context.Context, p *ui.Program) error {
+	if err := ui.Run(ctx, func(ctx context.Context, p *ui.Program) error {
 		return work(ctx, tuiPresenter{p: p})
-	})
+	}); err != nil {
+		return fmt.Errorf("interactive run: %w", err)
+	}
+	return nil
 }
 
 // setupLogging installs the process-wide slog default. The plain surface
