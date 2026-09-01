@@ -344,7 +344,7 @@ func TestStreamSeparatorOwnLine(t *testing.T) {
 	m := sized(newModel())
 	m = drive(m, streamMsg{agent: "triage", text: "both"})
 
-	for _, line := range strings.Split(m.viewport.GetContent(), "\n") {
+	for line := range strings.SplitSeq(m.viewport.GetContent(), "\n") {
 		if strings.Contains(line, " triage ") && strings.Contains(line, "both") {
 			t.Errorf("separator and streamed text share a line: %q", line)
 		}
@@ -363,7 +363,7 @@ func TestStreamDoesNotPadLines(t *testing.T) {
 	})
 	m = drive(m, warnMsg{text: "warning line one\nwarning line two, the longest"})
 
-	for _, line := range strings.Split(m.viewport.GetContent(), "\n") {
+	for line := range strings.SplitSeq(m.viewport.GetContent(), "\n") {
 		if strings.HasSuffix(line, " ") {
 			t.Errorf("line padded with trailing spaces: %q", line)
 		}

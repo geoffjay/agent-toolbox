@@ -69,3 +69,24 @@
   binary. The five findings it raises on this codebase are deliberate
   patterns (shell-free git subprocesses, repo-scoped file reads, the
   cache-dir log file) and carry `#nosec` annotations with rationale.
+* **Plan**: Added `plans/reusable-pipelines.md` — refactor the single
+  hardwired code-review graph into a toolbox of reusable agent-graph
+  pipelines. Introduces a `Pipeline` abstraction + pipeline-agnostic
+  `engine` (lifted from `cmd.runPipeline`), extracts model runtime
+  (`internal/model`) and HITL vocab (`internal/hitl`) out of
+  `internal/agents`, relocates review-specific code under
+  `internal/pipelines/review`, and shrinks `internal/graph` to a toolkit.
+  Sketches a repo-audit second pipeline to prove the seams. Records the
+  full coupling inventory, ordered migration steps, and configuration
+  concepts.
+* **Presenter move**: Moved the `Presenter` interface, plain/TUI surfaces,
+  `sanitize`, `dispatch`→`ui.Dispatch`, and the run-log sink out of
+  `cmd/presenter.go` into `internal/ui/presenter.go` (step 1 of the plan).
+  Decoupled from `cmd.loggingFlags` (now takes `slog.Level`) and from
+  `agents.SummaryAgentName` (report-agent name passed into `ui.Dispatch`).
+  Relocated the presenter/gate-prompt/approval tests into `internal/ui`.
+* **Review rules**: Added an exhaustive `.review/rules/` set encoding the
+  target architecture (pipeline isolation, ui-no-domain-imports,
+  engine agent-agnosticism, neutral HITL vocab, generic-vs-pipeline tools,
+  parameterized rules scoping, package layout, neutral shared-layer names)
+  so the review pipeline flags structural regressions on this repo.

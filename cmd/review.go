@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -152,7 +151,7 @@ pass --plain for the classic streaming output.`,
 			state := map[string]any{
 				tools.RepoPathStateKey: absRepo,
 			}
-			work := func(ctx context.Context, p Presenter) error {
+			work := func(ctx context.Context, p ui.Presenter) error {
 				report, err := runPipeline(ctx, runPipelineInput{
 					modelFlags:    mf,
 					pipelineFlags: pf,
@@ -168,7 +167,11 @@ pass --plain for the classic streaming output.`,
 				p.Finish(report)
 				return nil
 			}
-			return dispatch(ctx, lf, plain, work)
+			// TODO(reusable-pipelines step 4): the report agent is
+			// hardcoded to the review summary. Replace SummaryAgentName
+			// with the active pipeline's ReportAgent() once the pipeline
+			// registry lands.
+			return ui.Dispatch(ctx, lf.level(), plain, agents.SummaryAgentName, work)
 		},
 	}
 
@@ -217,7 +220,7 @@ type runPipelineInput struct {
 // WithStateDelta so the tools can read repo_path / pr_ref at runtime. It
 // returns the full text output of the pipeline (concatenated non-thought
 // text parts).
-func runPipeline(ctx context.Context, in runPipelineInput, p Presenter) (string, error) {
+func runPipeline(ctx context.Context, in runPipelineInput, p ui.Presenter) (string, error) {
 	m, err := agents.NewModel(ctx, agents.ModelConfig{
 		Provider:  agents.Provider(in.provider),
 		ModelName: in.modelName,
@@ -385,66 +388,6 @@ func runPipeline(ctx context.Context, in runPipelineInput, p Presenter) (string,
 			shallowDiagnostics(in, stats))
 	}
 	return report, nil
-}
-
-// promptGate renders a paused gate's request on the terminal and collects
-// the human's decision (with feedback on revise). It fails closed when
-// stdin is not an interactive terminal.
-func promptGate(req ui.GateRequest) (map[string]any, error) {
-	stat, err := os.Stdin.Stat()
-	if err != nil || stat.Mode()&os.ModeCharDevice == 0 {
-		return nil, fmt.Errorf("pipeline paused for human input (%q) but stdin is not a terminal; re-run interactively", req.Message)
-	}
-	return promptGateAnswer(os.Stdin, os.Stderr, req)
-}
-
-// promptGateAnswer reads a gate decision (and revision feedback) from in,
-// rendering the request on out. Split from promptGate for testability.
-func promptGateAnswer(in io.Reader, out io.Writer, req ui.GateRequest) (map[string]any, error) {
-	_, _ = fmt.Fprintln(out, "\n=== human gate ===")
-	if req.Message != "" {
-		_, _ = fmt.Fprintln(out, req.Message)
-	}
-	if req.Payload != "" {
-		_, _ = fmt.Fprintln(out, req.Payload)
-	}
-	_, _ = fmt.Fprint(out, "decision [approve/revise/abort]: ")
-	// One buffered reader for the whole interaction: a second reader over
-	// the same stream would lose whatever the first had buffered ahead.
-	reader := bufio.NewReader(in)
-	line, err := reader.ReadString('\n')
-	if err != nil && strings.TrimSpace(line) == "" {
-		return nil, fmt.Errorf("read gate decision: %w", err)
-	}
-	decision := strings.ToLower(strings.TrimSpace(line))
-	switch decision {
-	case agents.DecisionApprove, agents.DecisionRevise, agents.DecisionAbort:
-	default:
-		return nil, fmt.Errorf("invalid gate decision %q (want approve, revise, or abort)", decision)
-	}
-	answer := map[string]any{"decision": decision}
-	if decision == agents.DecisionRevise {
-		_, _ = fmt.Fprintln(out, "feedback for the reviewers (end with a single '.'):")
-		var lines []string
-		for {
-			l, rerr := reader.ReadString('\n')
-			if strings.TrimSpace(l) == "." {
-				break
-			}
-			if l != "" {
-				lines = append(lines, l)
-			}
-			if rerr != nil {
-				break // EOF or failure: keep what was collected
-			}
-		}
-		feedback := strings.Join(lines, "")
-		if strings.TrimSpace(feedback) == "" {
-			return nil, fmt.Errorf("revise requires feedback describing what to change")
-		}
-		answer["feedback"] = feedback
-	}
-	return answer, nil
 }
 
 // resumeMessage builds the user-side Content that resumes a paused
