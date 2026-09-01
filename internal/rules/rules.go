@@ -134,7 +134,7 @@ var validSeverities = map[string]bool{
 }
 
 func loadRule(path string) (*Rule, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path comes from walking the repo's own rules directory.
 	if err != nil {
 		return nil, fmt.Errorf("read rule %s: %w", path, err)
 	}

@@ -1,0 +1,48 @@
+amends "package://github.com/jdx/hk/releases/download/v1.54.1/hk@1.54.1#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.54.1/hk@1.54.1#/Builtins.pkl"
+
+// Git hooks run with a minimal PATH, so mise-managed tools (gosec, gofumpt,
+// golangci-lint) and ~/go/bin (goimports) are unreachable there and the
+// go-sec step failed with "gosec: command not found". hk does not expand
+// templates in env values, so resolve HOME/PATH at config-evaluation time.
+local home = read("env:HOME")
+local curPath = read("env:PATH")
+
+env {
+  ["PATH"] = "\(home)/.local/share/mise/shims:\(home)/go/bin:\(curPath)"
+}
+
+local linters = new Mapping<String, Step> {
+  // prevent hk changes from breaking things
+  // ["pkl"] = Builtins.pkl
+  ["hk test"] = Builtins.hk_test
+
+  // common go linters and checks
+  ["go-fmt"] = Builtins.go_fmt
+  ["go-fumpt"] = Builtins.go_fumpt
+  ["go-imports"] = Builtins.go_imports
+  ["go-sec"] = Builtins.go_sec
+  ["go-vet"] = Builtins.go_vet
+  ["golangci-lint"] = Builtins.golangci_lint
+  ["gomod-tidy"] = Builtins.gomod_tidy
+
+  // cleanup
+  ["newlines"] = Builtins.newlines
+}
+
+hooks {
+  ["pre-commit"] {
+      fix = true
+      stash = "git"
+      steps = linters
+  }
+
+  ["fix"] {
+      fix = true
+      steps = linters
+  }
+
+  ["check"] {
+      steps = linters
+  }
+}

@@ -52,15 +52,33 @@ to touch the KB on every edit.
 
 ## Decisions
 
-* _(empty — add decision docs here)_
+* [ADK parallel-turn input workaround](decisions/adk-parallel-turn-input.md) —
+  keep the diff in every agent LLM request; ADK's single-turn pivot scan
+  ignores branches, so parallel reviewers steal each other's turn boundary.
 
 ## Patterns
 
-* _(empty — add pattern docs here)_
+* [ADK HITL gates](patterns/adk-hitl-gates.md) — request-input interrupt,
+  re-run-on-resume, conditional-cycle loop-back pattern used by the
+  findings gate.
 
 ## Plans
 
-* _(empty — add plan docs here)_
+* [Human-in-the-loop gates in the review graph](plans/hitl-gates.md) —
+  approval nodes in the ADK workflow graph; findings gate with
+  decline-with-feedback loop-back built first.
+* [Resumable runs via a persisted run file](plans/resumable-runs.md) —
+  file-backed ADK session service plus a run manifest so failed or
+  gate-paused runs resume midway.
+* [Bubbletea terminal interface for review runs](plans/tui-presentation.md) —
+  charm-stack TUI (bubbletea, bubbles, huh, lipgloss, glamour) with a
+  plain fallback surface; built, with deviations and open improvements
+  marked for review.
+* [Reusable agent-graph pipelines](plans/reusable-pipelines.md) —
+  refactor the single hardwired review graph into a toolbox of reusable
+  pipelines (Pipeline abstraction + pipeline-agnostic engine, shared
+  ui/model/rules/tools/hitl layers); repo-audit sketched as the second
+  pipeline; invariants mirrored in `.review/rules/`.
 
 ## References
 

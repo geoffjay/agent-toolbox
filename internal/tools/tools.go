@@ -52,7 +52,7 @@ func ReadFile(ctx agent.Context, in ReadFileInput) (ReadFileOutput, error) {
 	if err != nil {
 		return ReadFileOutput{}, err
 	}
-	b, err := os.ReadFile(abs)
+	b, err := os.ReadFile(abs) // #nosec G304 -- in.Path is joined under the repo root and rejected when it escapes (safeJoin).
 	if err != nil {
 		return ReadFileOutput{}, fmt.Errorf("read %s: %w", in.Path, err)
 	}
@@ -253,7 +253,7 @@ func lineOrZero(n int) int {
 // runGit runs a git command in dir, cancelled with ctx, and returns its
 // stdout.
 func runGit(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- git runs without a shell; args come from the tool's validated inputs.
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
