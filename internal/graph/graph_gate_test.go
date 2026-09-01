@@ -15,8 +15,8 @@ import (
 	"google.golang.org/adk/v2/workflow"
 	"google.golang.org/genai"
 
-	"github.com/geoffjay/graph-review/internal/agents"
-	"github.com/geoffjay/graph-review/internal/graph"
+	"github.com/geoffjay/agent-toolbox/internal/agents"
+	"github.com/geoffjay/agent-toolbox/internal/graph"
 )
 
 // scriptedModel routes each LLM call by the marker text in its system

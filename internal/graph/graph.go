@@ -24,8 +24,8 @@ import (
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/workflow"
 
-	"github.com/geoffjay/graph-review/internal/agents"
-	"github.com/geoffjay/graph-review/internal/rules"
+	"github.com/geoffjay/agent-toolbox/internal/agents"
+	"github.com/geoffjay/agent-toolbox/internal/rules"
 )
 
 // Config holds the options for building the review graph. All LLM agents

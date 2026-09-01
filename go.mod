@@ -1,4 +1,4 @@
-module github.com/geoffjay/graph-review
+module github.com/geoffjay/agent-toolbox
 
 go 1.26.5
 

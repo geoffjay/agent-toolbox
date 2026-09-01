@@ -9,7 +9,7 @@ import (
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/model/openaimodel"
 
-	"github.com/geoffjay/graph-review/internal/agents/anthropicmodel"
+	"github.com/geoffjay/agent-toolbox/internal/agents/anthropicmodel"
 )
 
 // Provider identifies which LLM backend to use.

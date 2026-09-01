@@ -2,7 +2,7 @@
 """
 Claude Code SessionStart hook that injects the knowledge base index.
 
-The graph-review knowledge base (docs/knowledgebase/, OKF v0.2) carries the project's
+The agent-toolbox knowledge base (docs/knowledgebase/, OKF v0.2) carries the project's
 decisions, patterns, and conventions. This hook injects docs/knowledgebase/index.md
 as context at the start of every session (startup, resume, clear, compact) so an
 agent always has the KB map and the consult/update policy in hand — independent of
@@ -41,7 +41,7 @@ def main() -> int:
         return 0
 
     context = (
-        "# graph-review knowledge base (injected)\n\n"
+        "# agent-toolbox knowledge base (injected)\n\n"
         "The project keeps a knowledge base at docs/knowledgebase/. Consult the "
         "relevant entries before working on a task and update them when a change "
         "makes an entry wrong or leaves a new fact unrecorded — the policy and the "

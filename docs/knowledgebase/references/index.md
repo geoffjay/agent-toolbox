@@ -1,5 +1,5 @@
 # References
 
-references for the graph-review project.
+references for the agent-toolbox project.
 
 * [OKF spec](okf-spec.md) - pointer to the Open Knowledge Format v0.2 specification.

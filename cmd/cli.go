@@ -1,4 +1,4 @@
-// Package cmd implements the graph-review command-line interface.
+// Package cmd implements the agent-toolbox command-line interface.
 package cmd
 
 import (
@@ -12,9 +12,9 @@ import (
 )
 
 var cliCmd = &cobra.Command{
-	Use:   "graph-review",
+	Use:   "agent-toolbox",
 	Short: "AI-driven code review tool using agent graphs",
-	Long: `graph-review performs automated code reviews using cooperating
+	Long: `agent-toolbox performs automated code reviews using cooperating
 AI agents wired together as a graph.`,
 }
 

@@ -6,7 +6,7 @@ resource: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf
 tags: [reference, okf, spec]
 ---
 
-The graph-review knowledge base conforms to OKF v0.2.
+The agent-toolbox knowledge base conforms to OKF v0.2.
 
 # Specification
 

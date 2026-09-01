@@ -44,7 +44,7 @@ def project_dir(hook_input: dict) -> str:
 
 
 def state_dir(session_id: str) -> str:
-    d = os.path.join(tempfile.gettempdir(), "graph-review-kb-state", session_id or "unknown")
+    d = os.path.join(tempfile.gettempdir(), "agent-toolbox-kb-state", session_id or "unknown")
     os.makedirs(d, exist_ok=True)
     return d
 

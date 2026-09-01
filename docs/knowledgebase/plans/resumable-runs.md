@@ -48,7 +48,7 @@ and stop losing human gate decisions.
 
 New package (e.g. `internal/runs`): a `session.Service` storing one JSON
 file per session at
-`$XDG_STATE_HOME/graph-review/runs/<session-id>.json`
+`$XDG_STATE_HOME/agent-toolbox/runs/<session-id>.json`
 (fallback `~/.local/state/...`; `--runs-dir` to override; not a temp
 file — it must survive reboots, which rules out os.TempDir).
 
@@ -82,13 +82,13 @@ section in the same file answers "what CLI invocation was this":
 ### 3. CLI UX
 
 - Every run writes its run file; the path is printed to stderr on
-  start, on pause, and on failure ("resume with: graph-review resume
+  start, on pause, and on failure ("resume with: agent-toolbox resume
   <path>").
-- `graph-review resume <session-id-or-path> [--assume-yes] [flag
+- `agent-toolbox resume <session-id-or-path> [--assume-yes] [flag
   overrides]`: rebuilds the pipeline from the manifest, opens the same
   session, and continues — prompts at a paused gate, re-runs only
   unfinished nodes after a crash, or re-confirms a pending post.
-- `graph-review runs list` / `runs prune --older-than 30d`
+- `agent-toolbox runs list` / `runs prune --older-than 30d`
   (follow-ups).
 
 ### 4. Wiring

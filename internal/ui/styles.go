@@ -1,4 +1,4 @@
-// Package ui presents graph-review runs in a bubbletea terminal user
+// Package ui presents agent-toolbox runs in a bubbletea terminal user
 // interface: streaming agent output, progress spinners, human-in-the-loop
 // forms, and the final rendered markdown report.
 package ui

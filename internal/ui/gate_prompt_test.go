@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geoffjay/graph-review/internal/agents"
+	"github.com/geoffjay/agent-toolbox/internal/agents"
 )
 
 func TestPromptGateAnswer(t *testing.T) {

@@ -27,7 +27,7 @@ func TestConfirmPostInteractivePTY(t *testing.T) {
 	}
 
 	ok, err := plainPresenter{}.Confirm(Confirmation{
-		Title:  "post this review to geoffjay/graph-review#42?",
+		Title:  "post this review to geoffjay/agent-toolbox#42?",
 		Detail: "event: COMMENT (1 inline comment)\n  comment 1 — a.go:1",
 	})
 	if err != nil {
@@ -58,7 +58,7 @@ func TestPlainConfirmPrintsBody(t *testing.T) {
 	stdin, stderr := os.Stdin, os.Stderr
 	os.Stdin, os.Stderr = sr, ew
 	_, confirmErr := plainPresenter{}.Confirm(Confirmation{
-		Title:  "post this review to geoffjay/graph-review#42?",
+		Title:  "post this review to geoffjay/agent-toolbox#42?",
 		Detail: "event: COMMENT (1 inline comment)",
 		Body:   "## Verdict\n\nLGTM with one nit.",
 	})
@@ -73,7 +73,7 @@ func TestPlainConfirmPrintsBody(t *testing.T) {
 		t.Error("Confirm() succeeded with non-terminal stdin; want fail-closed error")
 	}
 	for _, want := range []string{
-		"post this review to geoffjay/graph-review#42?",
+		"post this review to geoffjay/agent-toolbox#42?",
 		"event: COMMENT (1 inline comment)",
 		"## Verdict",
 		"LGTM with one nit.",

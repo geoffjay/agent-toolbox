@@ -10,7 +10,7 @@ import (
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/geoffjay/graph-review/internal/agents"
+	"github.com/geoffjay/agent-toolbox/internal/agents"
 )
 
 // formKind discriminates which interaction an embedded huh form serves.
@@ -203,7 +203,7 @@ func (m model) View() tea.View {
 	v := tea.NewView(m.render())
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
-	v.WindowTitle = "graph-review"
+	v.WindowTitle = "agent-toolbox"
 	return v
 }
 
@@ -213,7 +213,7 @@ func (m model) render() string {
 	}
 
 	header := lipgloss.JoinHorizontal(lipgloss.Center,
-		m.theme.Brand.Render(" graph-review "),
+		m.theme.Brand.Render(" agent-toolbox "),
 		m.theme.Label.Render(truncate(m.label, m.width-14)))
 
 	var status string

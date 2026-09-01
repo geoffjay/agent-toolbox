@@ -1,6 +1,6 @@
-# graph-review
+# agent-toolbox
 
-`graph-review` is a tool for performing automated code reviews using
+`agent-toolbox` is a tool for performing automated code reviews using
 AI agents. It is built with [Go](https://go.dev) and the
 [ADK](https://github.com/agent-development-kit/agent-development-kit-go)
 library, which provides the agent loop and graph primitives used to
@@ -102,9 +102,9 @@ available:
 ### Review a diff
 
 ```sh
-git diff | graph-review review diff -m <model>
-graph-review review diff changes.patch --base-url http://localhost:11434/v1 -m llama3.1:latest
-graph-review review diff changes.patch --provider anthropic -m claude-sonnet-4-20250514
+git diff | agent-toolbox review diff -m <model>
+agent-toolbox review diff changes.patch --base-url http://localhost:11434/v1 -m llama3.1:latest
+agent-toolbox review diff changes.patch --provider anthropic -m claude-sonnet-4-20250514
 ```
 
 The diff is read from a file argument or stdin. The reviewer tools are
@@ -114,13 +114,13 @@ rooted at `--repo` (default: working directory).
 
 ```sh
 export GITHUB_TOKEN=<token>
-graph-review review pr <owner/repo> <number> -m <model>
+agent-toolbox review pr <owner/repo> <number> -m <model>
 ```
 
 Example:
 
 ```sh
-graph-review review pr geoffjay/graph-review 42 -m gpt-4o-mini
+agent-toolbox review pr geoffjay/agent-toolbox 42 -m gpt-4o-mini
 ```
 
 The PR subcommand fetches the diff from the GitHub REST API and
@@ -168,7 +168,7 @@ requests/hour.
 To post the review back to GitHub:
 
 ```sh
-graph-review review pr geoffjay/graph-review 42 -m gpt-4o-mini --post-comments
+agent-toolbox review pr geoffjay/agent-toolbox 42 -m gpt-4o-mini --post-comments
 ```
 
 ### Model configuration
@@ -190,8 +190,8 @@ runtimes like [Ollama](https://ollama.com)
 endpoint.
 
 ```sh
-git diff | graph-review review diff -m gpt-4o-mini
-graph-review review diff changes.patch --base-url http://localhost:11434/v1 -m llama3.1:latest
+git diff | agent-toolbox review diff -m gpt-4o-mini
+agent-toolbox review diff changes.patch --base-url http://localhost:11434/v1 -m llama3.1:latest
 ```
 
 #### Anthropic (Claude)
@@ -201,7 +201,7 @@ API, supporting Claude models without a translating proxy:
 
 ```sh
 export ANTHROPIC_API_KEY=<key>
-graph-review review diff -m claude-sonnet-4-20250514 --provider anthropic
+agent-toolbox review diff -m claude-sonnet-4-20250514 --provider anthropic
 ```
 
 The provider is auto-detected: if `ANTHROPIC_API_KEY` is set and

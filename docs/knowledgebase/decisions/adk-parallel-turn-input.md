@@ -8,7 +8,7 @@ date: 2026-08-29
 
 ## Context
 
-`graph-review review pr` against an Ollama-served model
+`agent-toolbox review pr` against an Ollama-served model
 (`--provider openai --base-url http://localhost:11434/v1`,
 e.g. `glm-5.3:cloud`) produced empty reports: every reviewer agent
 exhausted its retries with

@@ -1,6 +1,6 @@
 # Plans
 
-plans for the graph-review project.
+plans for the agent-toolbox project.
 
 - [Human-in-the-loop gates in the review graph](hitl-gates.md) — approval
   nodes in the ADK workflow graph; findings gate with decline-with-feedback

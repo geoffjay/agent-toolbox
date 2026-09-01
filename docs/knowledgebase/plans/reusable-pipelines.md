@@ -1,7 +1,7 @@
 ---
 type: Plan
 title: Reusable agent-graph pipelines
-description: Refactor graph-review from a single hardwired code-review graph into a toolbox of reusable agent-graph pipelines, with a first-class Pipeline abstraction, a pipeline-agnostic run engine, shared UI/config/rules/tool layers, and a second (repo-audit) pipeline to prove the seams.
+description: Refactor agent-toolbox from a single hardwired code-review graph into a toolbox of reusable agent-graph pipelines, with a first-class Pipeline abstraction, a pipeline-agnostic run engine, shared UI/config/rules/tool layers, and a second (repo-audit) pipeline to prove the seams.
 tags: [plan, architecture, pipeline, reusability, graph, adk, refactor]
 ---
 
@@ -15,7 +15,7 @@ itself.
 
 ## Goal
 
-Turn `graph-review` from an application that *is* one code-review graph into
+Turn `agent-toolbox` from an application that *is* one code-review graph into
 a toolbox that *hosts many* agent-graph pipelines. Adding a new pipeline
 (a new "useful process") should mean writing one self-contained package that
 declares its graph, agents, input, and output — and reusing everything else
@@ -72,7 +72,7 @@ most to least entangled:
    `SummaryAgentName` as "the agent whose stream is the report"; labels read
    "review" / "human gate".
 
-8. **Naming** — the binary/module, the log dir (`<cache>/graph-review/log`),
+8. **Naming** — the binary/module, the log dir (`<cache>/agent-toolbox/log`),
    and `.review/rules` are all review-branded. The toolbox name is fine;
    review-specific *dir names in shared layers* are not.
 

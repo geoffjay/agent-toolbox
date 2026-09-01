@@ -96,11 +96,11 @@ func (m *anthropicModel) GenerateContent(ctx context.Context, req *model.LLMRequ
 	return m.generate(ctx, params)
 }
 
-// debugLog logs only when GRAPH_REVIEW_DEBUG is set; the model emits a
+// debugLog logs only when AGENT_TOOLBOX_DEBUG is set; the model emits a
 // line per response block, which would otherwise flood stderr on every
 // run.
 func debugLogf(format string, args ...any) {
-	if os.Getenv("GRAPH_REVIEW_DEBUG") == "" {
+	if os.Getenv("AGENT_TOOLBOX_DEBUG") == "" {
 		return
 	}
 	log.Printf("[anthropic] "+format, args...)

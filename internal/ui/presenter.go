@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/geoffjay/graph-review/internal/agents"
+	"github.com/geoffjay/agent-toolbox/internal/agents"
 )
 
 // Presenter surfaces pipeline progress to the user and collects
@@ -224,7 +224,7 @@ func setupLogging(level slog.Level, tui bool) func() {
 const logKeep = 5
 
 // openRunLog creates the per-run TUI log file in
-// <UserCacheDir>/graph-review/log and prunes older runs.
+// <UserCacheDir>/agent-toolbox/log and prunes older runs.
 func openRunLog() (*os.File, string, error) {
 	dir, err := userLogDir()
 	if err != nil {
@@ -251,7 +251,7 @@ func userLogDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve cache dir: %w", err)
 	}
-	return filepath.Join(base, "graph-review", "log"), nil
+	return filepath.Join(base, "agent-toolbox", "log"), nil
 }
 
 // pruneRunLogs removes the oldest run logs beyond logKeep. Best effort:

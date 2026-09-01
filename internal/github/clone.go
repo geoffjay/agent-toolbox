@@ -19,7 +19,7 @@ import (
 // fetched explicitly so the checkout is pinned to the PR head even if the
 // branch tip moved between fetch and clone.
 func (c *Client) CloneRepo(ctx context.Context, pr *PR) (dir string, cleanup func(), err error) {
-	tmp, err := os.MkdirTemp("", "graph-review-clone-*")
+	tmp, err := os.MkdirTemp("", "agent-toolbox-clone-*")
 	if err != nil {
 		return "", nil, fmt.Errorf("create clone dir: %w", err)
 	}

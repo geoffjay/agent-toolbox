@@ -13,7 +13,7 @@ process.
   type or function named for reviews, findings, or diffs when it holds a
   general concept.
 - Directory and file names in shared layers stay process-neutral. The
-  application name (`graph-review`) is acceptable for the binary and the
+  application name (`agent-toolbox`) is acceptable for the binary and the
   log directory. A `review` or `findings` directory name inside a shared
   layer is not.
 - Prefer general words: pipeline, report, finding location, gate. Reserve

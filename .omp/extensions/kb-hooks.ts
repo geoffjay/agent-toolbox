@@ -1,5 +1,5 @@
 /**
- * graph-review knowledge-base hooks for oh-my-pi.
+ * agent-toolbox knowledge-base hooks for oh-my-pi.
  *
  *   - `session_start` + `before_agent_start`: inject `docs/knowledgebase/index.md`
  *     as context at the start of every session (startup, resume, switch), so the
@@ -39,7 +39,7 @@ const TRIGGERS: ReadonlyArray<{ pattern: RegExp; hint: string }> = [
 ];
 
 const KB_INJECT_PREAMBLE =
-  "# graph-review knowledge base (injected)\n\n" +
+  "# agent-toolbox knowledge base (injected)\n\n" +
   "The project keeps a knowledge base at docs/knowledgebase/. Consult the " +
   "relevant entries before working on a task and update them when a change " +
   "makes an entry wrong or leaves a new fact unrecorded — the policy and the " +
@@ -100,7 +100,7 @@ function editedPaths(event: { toolName: string; input: Record<string, unknown> }
 // --- extension factory -------------------------------------------------------
 
 export default function kbHooks(pi: ExtensionAPI): void {
-  pi.setLabel("graph-review KB hooks");
+  pi.setLabel("agent-toolbox KB hooks");
 
   pi.on("session_start", async (_event, ctx) => {
     // Reset per-session state for startup / resume / switch.

@@ -1,4 +1,4 @@
-// Package agents defines the cooperating agents used by graph-review:
+// Package agents defines the cooperating agents used by agent-toolbox:
 // Triage, Static Analysis, Security, and Summary. Each agent is a node in
 // the review graph.
 package agents

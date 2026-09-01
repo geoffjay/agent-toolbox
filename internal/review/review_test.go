@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/geoffjay/graph-review/internal/github"
+	"github.com/geoffjay/agent-toolbox/internal/github"
 )
 
 func TestParseFindings(t *testing.T) {

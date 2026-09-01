@@ -7,7 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/geoffjay/graph-review/internal/agents"
+	"github.com/geoffjay/agent-toolbox/internal/agents"
 )
 
 // press builds a printable-character key press.

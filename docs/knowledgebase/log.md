@@ -1,7 +1,7 @@
 # Knowledge Base Update Log
 
 ## 2026-08-28
-* **Scaffold**: Created the graph-review knowledge base at `docs/knowledgebase/` using the `okf-ify` skill. Initial structure: `index.md`, `log.md`, and concept directories (concepts, decisions, patterns, references, plans). OKF v0.2 conformant.
+* **Scaffold**: Created the agent-toolbox knowledge base at `docs/knowledgebase/` using the `okf-ify` skill. Initial structure: `index.md`, `log.md`, and concept directories (concepts, decisions, patterns, references, plans). OKF v0.2 conformant.
 * **Plan**: Added `plans/hitl-gates.md` — human-in-the-loop gate nodes
   (scope / findings / verdict) for the ADK review graph, findings gate
   with revise loop-back as the first build.
@@ -34,7 +34,7 @@
 
 ## 2026-08-30
 * **Review response**: Worked through the PR 9 review findings. Fixed the
-  TUI log sink (per-run 0600 file under `<UserCacheDir>/graph-review/log`,
+  TUI log sink (per-run 0600 file under `<UserCacheDir>/agent-toolbox/log`,
   pruned to the last 5 runs, `DEBUG`-env escalation removed, path shown at
   startup, verified `tea.LogToFile` is O_APPEND — the security reviewer was
   right); the spinner tick-chain death after gate pauses/finish (always

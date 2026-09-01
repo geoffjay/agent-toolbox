@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/geoffjay/graph-review/internal/github"
+	"github.com/geoffjay/agent-toolbox/internal/github"
 )
 
 // hunkHeaderRe matches unified diff hunk headers like

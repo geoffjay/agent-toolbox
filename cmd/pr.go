@@ -12,11 +12,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/geoffjay/graph-review/internal/agents"
-	"github.com/geoffjay/graph-review/internal/github"
-	"github.com/geoffjay/graph-review/internal/review"
-	"github.com/geoffjay/graph-review/internal/tools"
-	"github.com/geoffjay/graph-review/internal/ui"
+	"github.com/geoffjay/agent-toolbox/internal/agents"
+	"github.com/geoffjay/agent-toolbox/internal/github"
+	"github.com/geoffjay/agent-toolbox/internal/review"
+	"github.com/geoffjay/agent-toolbox/internal/tools"
+	"github.com/geoffjay/agent-toolbox/internal/ui"
 )
 
 // reviewPRCmd builds the `review pr <owner/repo> <number>` subcommand.
@@ -45,7 +45,7 @@ func reviewPRCmd() *cobra.Command {
 
 The PR is identified by owner/repo and number, e.g.:
 
-  graph-review review pr geoffjay/graph-review 42
+  agent-toolbox review pr geoffjay/agent-toolbox 42
 
 Authentication uses --github-token or the GITHUB_TOKEN env var. Without a
 token, only public repos work and the API is rate-limited to 60 req/hr.

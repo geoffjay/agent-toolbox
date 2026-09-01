@@ -22,12 +22,12 @@ import (
 	"google.golang.org/adk/v2/workflow"
 	"google.golang.org/genai"
 
-	"github.com/geoffjay/graph-review/internal/agents"
-	"github.com/geoffjay/graph-review/internal/graph"
-	"github.com/geoffjay/graph-review/internal/review"
-	"github.com/geoffjay/graph-review/internal/rules"
-	"github.com/geoffjay/graph-review/internal/tools"
-	"github.com/geoffjay/graph-review/internal/ui"
+	"github.com/geoffjay/agent-toolbox/internal/agents"
+	"github.com/geoffjay/agent-toolbox/internal/graph"
+	"github.com/geoffjay/agent-toolbox/internal/review"
+	"github.com/geoffjay/agent-toolbox/internal/rules"
+	"github.com/geoffjay/agent-toolbox/internal/tools"
+	"github.com/geoffjay/agent-toolbox/internal/ui"
 )
 
 // modelFlags carries the model options shared by every review subcommand.
@@ -264,12 +264,12 @@ func runPipeline(ctx context.Context, in runPipelineInput, p ui.Presenter) (stri
 		return "", fmt.Errorf("build pipeline: %w", err)
 	}
 
-	r, err := runner.NewInMemory("graph-review", root)
+	r, err := runner.NewInMemory("agent-toolbox", root)
 	if err != nil {
 		return "", fmt.Errorf("build runner: %w", err)
 	}
 
-	userID := "graph-review-cli"
+	userID := "agent-toolbox-cli"
 	sessionID := in.sessionID
 	if sessionID == "" {
 		sessionID = randomSessionID()

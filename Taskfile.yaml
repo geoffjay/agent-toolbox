@@ -2,7 +2,7 @@ version: "3"
 
 env:
   BUILD_DIR: bin
-  BINARY_NAME: graph-review
+  BINARY_NAME: agent-toolbox
 
 tasks:
   deps:
@@ -42,12 +42,12 @@ tasks:
       - go fix ./...
 
   install:
-    desc: Install graph-review locally
+    desc: Install agent-toolbox locally
     cmds:
       - go install -v .
 
   run:
-    desc: Run graph-review
+    desc: Run agent-toolbox
     cmds:
       - go run .
 
@@ -88,7 +88,7 @@ tasks:
     desc: Run a PR review
     vars:
       ARGS: " --no-clone --post-comments --findings-gate"
-      REPO: "geoffjay/graph-review"
+      REPO: "geoffjay/agent-toolbox"
       BASE: '{{.BASE | default "--base-url http://localhost:11434/v1"}}'
       MODEL: '{{.MODEL | default "--model glm-5.3:cloud"}}'
       PROVIDER: '{{.PROVIDER | default "--provider openai"}}'

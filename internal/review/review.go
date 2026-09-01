@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/geoffjay/graph-review/internal/github"
+	"github.com/geoffjay/agent-toolbox/internal/github"
 )
 
 var findingRe = regexp.MustCompile(`(?m)^\s*[-*]\s+(.+)`)

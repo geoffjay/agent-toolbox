@@ -44,7 +44,7 @@ func NewClient(token string) *Client {
 	}
 }
 
-// PR is the subset of pull request fields graph-review needs.
+// PR is the subset of pull request fields agent-toolbox needs.
 type PR struct {
 	Number  int    `json:"number"`
 	Title   string `json:"title"`
@@ -107,7 +107,7 @@ type User struct {
 	HTMLURL string `json:"html_url"`
 }
 
-// RepoRef identifies an owner/repo pair, e.g. "geoffjay/graph-review".
+// RepoRef identifies an owner/repo pair, e.g. "geoffjay/agent-toolbox".
 type RepoRef struct {
 	Owner string
 	Repo  string

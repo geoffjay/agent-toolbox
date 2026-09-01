@@ -2,12 +2,12 @@
 okf_version: "0.2"
 ---
 
-# graph-review knowledge base
+# agent-toolbox knowledge base
 
-This is the working knowledge base for the graph-review project, conforming to the
+This is the working knowledge base for the agent-toolbox project, conforming to the
 [Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md).
 
-It consolidates working knowledge about the project: what graph-review is, how it is
+It consolidates working knowledge about the project: what agent-toolbox is, how it is
 structured, decisions and their rationale, recurring patterns, and plans.
 It is authored by people and agents and meant to be read by both.
 

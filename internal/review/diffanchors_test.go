@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geoffjay/graph-review/internal/github"
+	"github.com/geoffjay/agent-toolbox/internal/github"
 )
 
 // twoHunkPatch has hunks covering new-file lines 10-11 (added) and
