@@ -1,6 +1,7 @@
-package cmd
+package ui
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -12,13 +13,16 @@ import (
 	"time"
 
 	"github.com/geoffjay/graph-review/internal/agents"
-	"github.com/geoffjay/graph-review/internal/ui"
 )
 
 // Presenter surfaces pipeline progress to the user and collects
 // human-in-the-loop decisions. The bubbletea interface implements it for
 // interactive terminals; plainPresenter reproduces the classic
 // stdout/stderr behavior for pipes and CI.
+//
+// The interface is pipeline-agnostic: the run engine drives it with the
+// active pipeline's report-agent name (see Dispatch) rather than any
+// hardcoded agent, so a new pipeline reuses these surfaces unchanged.
 type Presenter interface {
 	// Start announces the run with a descriptive label.
 	Start(label string)
@@ -33,7 +37,7 @@ type Presenter interface {
 	Activity(text string)
 
 	// Stream appends a chunk of agent output. The TUI streams every
-	// agent; the plain surface only prints the summary agent's output
+	// agent; the plain surface only prints the report agent's output
 	// unless verbosity is raised.
 	Stream(agent, text string)
 
@@ -47,16 +51,19 @@ type Presenter interface {
 	Finish(report string)
 
 	// Gate pauses for a human decision on a pipeline gate.
-	Gate(req ui.GateRequest) (map[string]any, error)
+	Gate(req GateRequest) (map[string]any, error)
 
 	// Confirm asks a yes/no question.
-	Confirm(c ui.Confirmation) (bool, error)
+	Confirm(c Confirmation) (bool, error)
 }
 
 // plainPresenter writes to stdout/stderr like a classic CLI: streaming
-// summary output on stdout, everything else on stderr, prompts on stdin.
+// the report agent's output on stdout, everything else on stderr, prompts
+// on stdin. level gates how much non-report output reaches stdout;
+// reportAgent names the agent whose stream is the final report.
 type plainPresenter struct {
-	lf loggingFlags
+	level       slog.Level
+	reportAgent string
 }
 
 func (p plainPresenter) Start(label string) {
@@ -70,7 +77,7 @@ func (p plainPresenter) Milestone(text string) {
 func (p plainPresenter) Activity(string) {}
 
 func (p plainPresenter) Stream(agent, text string) {
-	if agent == agents.SummaryAgentName || p.lf.level() <= slog.LevelInfo {
+	if agent == p.reportAgent || p.level <= slog.LevelInfo {
 		fmt.Print(sanitize(text))
 	}
 }
@@ -90,12 +97,12 @@ func (p plainPresenter) Finish(report string) {
 	}
 }
 
-func (p plainPresenter) Gate(req ui.GateRequest) (map[string]any, error) {
+func (p plainPresenter) Gate(req GateRequest) (map[string]any, error) {
 	req.Message, req.Payload = sanitize(req.Message), sanitize(req.Payload)
 	return promptGate(req)
 }
 
-func (p plainPresenter) Confirm(c ui.Confirmation) (bool, error) {
+func (p plainPresenter) Confirm(c Confirmation) (bool, error) {
 	c.Title, c.Detail, c.Body = sanitize(c.Title), sanitize(c.Detail), sanitize(c.Body)
 	fmt.Fprintln(os.Stderr, c.Title)
 	if c.Detail != "" {
@@ -113,7 +120,7 @@ func (p plainPresenter) Confirm(c ui.Confirmation) (bool, error) {
 
 // tuiPresenter adapts the Presenter interface onto the bubbletea surface.
 type tuiPresenter struct {
-	p *ui.Program
+	p *Program
 }
 
 func (t tuiPresenter) Start(label string)        { t.p.Start(sanitize(label)) }
@@ -123,7 +130,7 @@ func (t tuiPresenter) Stream(agent, text string) { t.p.Stream(sanitize(agent), s
 func (t tuiPresenter) Warn(text string)          { t.p.Warn(sanitize(text)) }
 func (t tuiPresenter) Note(text string)          { t.p.Note(sanitize(text)) }
 func (t tuiPresenter) Finish(report string)      { t.p.Finish(sanitize(report)) }
-func (t tuiPresenter) Gate(req ui.GateRequest) (map[string]any, error) {
+func (t tuiPresenter) Gate(req GateRequest) (map[string]any, error) {
 	req.Message, req.Payload = sanitize(req.Message), sanitize(req.Payload)
 	reply, err := t.p.Gate(req)
 	if err != nil {
@@ -132,7 +139,7 @@ func (t tuiPresenter) Gate(req ui.GateRequest) (map[string]any, error) {
 	return reply, nil
 }
 
-func (t tuiPresenter) Confirm(c ui.Confirmation) (bool, error) {
+func (t tuiPresenter) Confirm(c Confirmation) (bool, error) {
 	c.Title, c.Detail, c.Body = sanitize(c.Title), sanitize(c.Detail), sanitize(c.Body)
 	ok, err := t.p.Confirm(c)
 	if err != nil {
@@ -166,18 +173,20 @@ func isTerminal(f *os.File) bool {
 	return err == nil && stat.Mode()&os.ModeCharDevice != 0
 }
 
-// dispatch runs work on the right presentation surface: the bubbletea
+// Dispatch runs work on the right presentation surface: the bubbletea
 // interface when stdout is a terminal, or the plain surface otherwise
-// (piped output, CI, or --plain). Logging is configured before the
-// interface starts because bubbletea owns the terminal once running.
-func dispatch(ctx context.Context, lf loggingFlags, plain bool, work func(ctx context.Context, p Presenter) error) error {
+// (piped output, CI, or --plain). level sets the log verbosity;
+// reportAgent names the agent whose streamed output is the final report
+// on the plain surface. Logging is configured before the interface starts
+// because bubbletea owns the terminal once running.
+func Dispatch(ctx context.Context, level slog.Level, plain bool, reportAgent string, work func(ctx context.Context, p Presenter) error) error {
 	interactive := !plain && isTerminal(os.Stdout)
 
-	defer setupLogging(lf, interactive)()
+	defer setupLogging(level, interactive)()
 	if !interactive {
-		return work(ctx, plainPresenter{lf: lf})
+		return work(ctx, plainPresenter{level: level, reportAgent: reportAgent})
 	}
-	if err := ui.Run(ctx, func(ctx context.Context, p *ui.Program) error {
+	if err := Run(ctx, func(ctx context.Context, p *Program) error {
 		return work(ctx, tuiPresenter{p: p})
 	}); err != nil {
 		return fmt.Errorf("interactive run: %w", err)
@@ -189,24 +198,24 @@ func dispatch(ctx context.Context, lf loggingFlags, plain bool, work func(ctx co
 // logs to stderr; the TUI surface logs to a per-run file under the user
 // cache dir because bubbletea occupies the terminal. Log output can
 // carry the reviewed diffs and file contents, so the file is private
-// (0600), unique per run, and old runs are pruned; the -v/--debug flags
-// alone control the level.
-func setupLogging(lf loggingFlags, tui bool) func() {
+// (0600), unique per run, and old runs are pruned; the caller-supplied
+// level alone controls verbosity.
+func setupLogging(level slog.Level, tui bool) func() {
 	if !tui {
-		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lf.level()})))
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 		return func() {}
 	}
 	w := io.Discard
 	closer := func() {}
 	if f, path, err := openRunLog(); err != nil {
 		// Logging is diagnostics, not the product: run without it
-		// rather than fail before any review work starts.
+		// rather than fail before any pipeline work starts.
 		fmt.Fprintf(os.Stderr, "warning: continuing without a log file: %v\n", err)
 	} else {
 		w, closer = f, func() { _ = f.Close() }
 		fmt.Fprintf(os.Stderr, "log: %s\n", path)
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: lf.level()})))
+	slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level})))
 	return closer
 }
 
@@ -262,5 +271,83 @@ func pruneRunLogs(dir string) {
 	sort.Strings(names)
 	for _, name := range names[:max(len(names)-logKeep, 0)] {
 		_ = os.Remove(filepath.Join(dir, name))
+	}
+}
+
+// promptGate renders a paused gate's request on the terminal and collects
+// the human's decision (with feedback on revise). It fails closed when
+// stdin is not an interactive terminal.
+func promptGate(req GateRequest) (map[string]any, error) {
+	stat, err := os.Stdin.Stat()
+	if err != nil || stat.Mode()&os.ModeCharDevice == 0 {
+		return nil, fmt.Errorf("pipeline paused for human input (%q) but stdin is not a terminal; re-run interactively", req.Message)
+	}
+	return promptGateAnswer(os.Stdin, os.Stderr, req)
+}
+
+// promptGateAnswer reads a gate decision (and revision feedback) from in,
+// rendering the request on out. Split from promptGate for testability.
+func promptGateAnswer(in io.Reader, out io.Writer, req GateRequest) (map[string]any, error) {
+	_, _ = fmt.Fprintln(out, "\n=== human gate ===")
+	if req.Message != "" {
+		_, _ = fmt.Fprintln(out, req.Message)
+	}
+	if req.Payload != "" {
+		_, _ = fmt.Fprintln(out, req.Payload)
+	}
+	_, _ = fmt.Fprint(out, "decision [approve/revise/abort]: ")
+	// One buffered reader for the whole interaction: a second reader over
+	// the same stream would lose whatever the first had buffered ahead.
+	reader := bufio.NewReader(in)
+	line, err := reader.ReadString('\n')
+	if err != nil && strings.TrimSpace(line) == "" {
+		return nil, fmt.Errorf("read gate decision: %w", err)
+	}
+	decision := strings.ToLower(strings.TrimSpace(line))
+	switch decision {
+	case agents.DecisionApprove, agents.DecisionRevise, agents.DecisionAbort:
+	default:
+		return nil, fmt.Errorf("invalid gate decision %q (want approve, revise, or abort)", decision)
+	}
+	answer := map[string]any{"decision": decision}
+	if decision == agents.DecisionRevise {
+		_, _ = fmt.Fprintln(out, "feedback for the reviewers (end with a single '.'):")
+		var lines []string
+		for {
+			l, rerr := reader.ReadString('\n')
+			if strings.TrimSpace(l) == "." {
+				break
+			}
+			if l != "" {
+				lines = append(lines, l)
+			}
+			if rerr != nil {
+				break // EOF or failure: keep what was collected
+			}
+		}
+		feedback := strings.Join(lines, "")
+		if strings.TrimSpace(feedback) == "" {
+			return nil, fmt.Errorf("revise requires feedback describing what to change")
+		}
+		answer["feedback"] = feedback
+	}
+	return answer, nil
+}
+
+// readApproval prompts on out and reads a yes/no answer from in. Any
+// answer other than y/yes declines; an unreadable input (EOF with no
+// answer) is an error so that a closed pipe can never be read as silent
+// approval.
+func readApproval(in io.Reader, out io.Writer) (bool, error) {
+	_, _ = fmt.Fprint(out, "post this review? [y/N]: ")
+	line, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil && strings.TrimSpace(line) == "" {
+		return false, fmt.Errorf("read confirmation: %w", err)
+	}
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		return true, nil
+	default:
+		return false, nil
 	}
 }

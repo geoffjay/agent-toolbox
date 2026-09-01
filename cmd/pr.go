@@ -1,11 +1,9 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/geoffjay/graph-review/internal/agents"
 	"github.com/geoffjay/graph-review/internal/github"
 	"github.com/geoffjay/graph-review/internal/review"
 	"github.com/geoffjay/graph-review/internal/tools"
@@ -82,7 +81,7 @@ pass --plain for the classic streaming output.`,
 
 			client := github.NewClient(githubToken)
 
-			work := func(ctx context.Context, p Presenter) error {
+			work := func(ctx context.Context, p ui.Presenter) error {
 				return reviewPR(ctx, client, ref, number, runPipelineInput{
 					modelFlags:    mf,
 					pipelineFlags: pf,
@@ -94,7 +93,11 @@ pass --plain for the classic streaming output.`,
 					assumeYes:    assumeYes,
 				}, p)
 			}
-			return dispatch(ctx, lf, plain, work)
+			// TODO(reusable-pipelines step 4): the report agent is
+			// hardcoded to the review summary. Replace SummaryAgentName
+			// with the active pipeline's ReportAgent() once the pipeline
+			// registry lands.
+			return ui.Dispatch(ctx, lf.level(), plain, agents.SummaryAgentName, work)
 		},
 	}
 
@@ -122,7 +125,7 @@ type prOptions struct {
 // reviewPR fetches the PR (and clones the repo when needed), runs the
 // pipeline over its diff, presents the report, and optionally posts it
 // as a GitHub review after human confirmation.
-func reviewPR(ctx context.Context, client *github.Client, ref github.RepoRef, number int, in runPipelineInput, opts prOptions, p Presenter) error {
+func reviewPR(ctx context.Context, client *github.Client, ref github.RepoRef, number int, in runPipelineInput, opts prOptions, p ui.Presenter) error {
 	p.Milestone(fmt.Sprintf("fetching PR %s#%d", ref, number))
 	pr, err := client.GetPR(ctx, ref, number)
 	if err != nil {
@@ -194,29 +197,11 @@ func reviewPR(ctx context.Context, client *github.Client, ref github.RepoRef, nu
 	return nil
 }
 
-// readApproval prompts on out and reads a yes/no answer from in. Any
-// answer other than y/yes declines; an unreadable input (EOF with no
-// answer) is an error so that a closed pipe can never be read as silent
-// approval.
-func readApproval(in io.Reader, out io.Writer) (bool, error) {
-	_, _ = fmt.Fprint(out, "post this review? [y/N]: ")
-	line, err := bufio.NewReader(in).ReadString('\n')
-	if err != nil && strings.TrimSpace(line) == "" {
-		return false, fmt.Errorf("read confirmation: %w", err)
-	}
-	switch strings.ToLower(strings.TrimSpace(line)) {
-	case "y", "yes":
-		return true, nil
-	default:
-		return false, nil
-	}
-}
-
 // postReview filters the pipeline's findings against the PR's diff
 // (dropping any whose file or line cannot be anchored), prompts for human
 // confirmation, and posts the review. If the PR file list cannot be
 // fetched it warns and does not post anything.
-func postReview(ctx context.Context, client *github.Client, ref github.RepoRef, number int, report string, assumeYes bool, p Presenter) error {
+func postReview(ctx context.Context, client *github.Client, ref github.RepoRef, number int, report string, assumeYes bool, p ui.Presenter) error {
 	if strings.TrimSpace(report) == "" {
 		p.Note("no review output to post")
 		return nil

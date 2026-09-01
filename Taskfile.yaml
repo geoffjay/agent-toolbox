@@ -84,6 +84,18 @@ tasks:
     desc: Development workflow
     deps: [modernize, fmt, vet, test, build]
 
+  review:pr:*:
+    desc: Run a PR review
+    vars:
+      ARGS: " --no-clone --post-comments --findings-gate"
+      REPO: "geoffjay/graph-review"
+      BASE: '{{.BASE | default "--base-url http://localhost:11434/v1"}}'
+      MODEL: '{{.MODEL | default "--model glm-5.3:cloud"}}'
+      PROVIDER: '{{.PROVIDER | default "--provider openai"}}'
+      PR: "{{index .MATCH 0}}"
+    cmds:
+      - $BUILD_DIR/$BINARY_NAME review pr {{.REPO}} {{.PR}} {{.ARGS}} {{.BASE}} {{.MODEL}} {{.PROVIDER}}
+
   release:
     desc: Release target (for GitHub Actions)
     deps: [clean, build-all]

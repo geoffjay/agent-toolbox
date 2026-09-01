@@ -74,6 +74,11 @@ to touch the KB on every edit.
   charm-stack TUI (bubbletea, bubbles, huh, lipgloss, glamour) with a
   plain fallback surface; built, with deviations and open improvements
   marked for review.
+* [Reusable agent-graph pipelines](plans/reusable-pipelines.md) —
+  refactor the single hardwired review graph into a toolbox of reusable
+  pipelines (Pipeline abstraction + pipeline-agnostic engine, shared
+  ui/model/rules/tools/hitl layers); repo-audit sketched as the second
+  pipeline; invariants mirrored in `.review/rules/`.
 
 ## References
 
