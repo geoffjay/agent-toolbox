@@ -93,6 +93,10 @@ pass --plain for the classic streaming output.`,
 					assumeYes:    assumeYes,
 				}, p)
 			}
+			// TODO(reusable-pipelines step 4): the report agent is
+			// hardcoded to the review summary. Replace SummaryAgentName
+			// with the active pipeline's ReportAgent() once the pipeline
+			// registry lands.
 			return ui.Dispatch(ctx, lf.level(), plain, agents.SummaryAgentName, work)
 		},
 	}
