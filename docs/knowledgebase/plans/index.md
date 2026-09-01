@@ -12,3 +12,8 @@ plans for the graph-review project.
   charm-stack TUI (bubbletea, bubbles, huh, lipgloss, glamour) with a
   plain fallback surface; built, with deviations and open improvements
   marked for review.
+- [Reusable agent-graph pipelines](reusable-pipelines.md) — turn the single
+  hardwired code-review graph into a toolbox of pipelines: a Pipeline
+  abstraction and pipeline-agnostic run engine, shared ui/model/rules/tools/
+  hitl layers, a second repo-audit pipeline to prove the seams, and
+  architectural invariants enforced through `.review/rules/`.
