@@ -58,6 +58,10 @@ to touch the KB on every edit.
 * [ADK join-barrier deadlock](decisions/adk-join-barrier-deadlock.md) —
   conditional routing into a JoinNode deadlocks the fan-in; a dynamic
   orchestrator node runs only the reviewers triage selected.
+* [Numbered diff for line anchors](decisions/review-line-anchor-drift.md) —
+  wrong posted line numbers traced to models counting hunk headers by
+  hand; the seed diff and read_file carry a new-file line-number gutter
+  and reviewers must cite it verbatim.
 
 ## Patterns
 

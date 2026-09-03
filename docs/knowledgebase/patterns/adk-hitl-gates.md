@@ -69,3 +69,10 @@ outside the hunks fails the whole POST with 422 "Line could not be
 resolved" — validate anchors with `review.FilterByDiffLines` before
 posting, and degrade to a body-only review if GitHub still rejects (the
 report body carries all findings anyway).
+
+Anchor *correctness* is upstream of validation: a wrong line that
+happens to exist in a hunk passes the filter (observed live — 4 of 11
+posted comments anchored to adjacent lines). The pipeline therefore
+presents the diff (and `read_file` output) with new-file line numbers in
+a gutter and instructs reviewers to cite those numbers verbatim — see
+[the numbered-diff decision](../decisions/review-line-anchor-drift.md).

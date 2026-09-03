@@ -37,6 +37,10 @@ type ReadFileInput struct {
 
 // ReadFileOutput is the output of the read_file tool.
 type ReadFileOutput struct {
+	// Content is the file with every line prefixed by its 1-based line
+	// number in the same %4d| gutter the numbered diff uses, so a
+	// reviewer citing `path:line` copies an authoritative number instead
+	// of counting lines by hand.
 	Content string `json:"content"`
 	Lines   int    `json:"lines"`
 }
@@ -64,7 +68,26 @@ func ReadFile(ctx agent.Context, in ReadFileInput) (ReadFileOutput, error) {
 			lines = in.MaxLines
 		}
 	}
-	return ReadFileOutput{Content: content, Lines: lines}, nil
+	return ReadFileOutput{Content: numberLines(content), Lines: lines}, nil
+}
+
+// numberLines prefixes every line of s with its 1-based line number in a
+// %4d| gutter, matching the numbered-diff gutter the reviewers see, so
+// numbers are interchangeable between the diff and full-file views.
+func numberLines(s string) string {
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	n := 1
+	for line := range strings.SplitSeq(strings.TrimSuffix(s, "\n"), "\n") {
+		if n > 1 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "%4d|%s", n, line)
+		n++
+	}
+	return b.String()
 }
 
 // ListFilesInput is the input for the list_files tool.
@@ -175,7 +198,7 @@ func GitLog(ctx agent.Context, in GitLogInput) (GitLogOutput, error) {
 func NewTools() ([]tool.Tool, error) {
 	read, err := functiontool.New(functiontool.Config{
 		Name:        "read_file",
-		Description: "Read a file from the repository, relative to the repo root. Use this to inspect code surrounding a diff hunk.",
+		Description: "Read a file from the repository, relative to the repo root. Use this to inspect code surrounding a diff hunk. Every returned line is prefixed with its 1-based line number; cite those numbers in findings.",
 	}, ReadFile)
 	if err != nil {
 		return nil, fmt.Errorf("build read_file tool: %w", err)

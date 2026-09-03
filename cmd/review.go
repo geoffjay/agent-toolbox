@@ -286,7 +286,13 @@ func runPipeline(ctx context.Context, in runPipelineInput, p ui.Presenter) (stri
 
 	msg := &genai.Content{
 		Parts: []*genai.Part{
-			{Text: "Please review the following diff:\n\n```diff\n" + in.diff + "\n```"},
+			// The diff is rendered with new-file line numbers in a fixed
+			// gutter so every reviewer cites authoritative `path:line`
+			// anchors instead of counting hunk headers by hand (the
+			// source of the wrong inline-comment lines observed in
+			// posted reviews). The raw diff is kept for anchor
+			// validation and the shallow-review heuristic.
+			{Text: "Please review the following diff. Line numbers in the left gutter are new-file line numbers — cite them exactly as shown:\n\n```\n" + review.NumberedDiff(in.diff) + "\n```"},
 		},
 		Role: "user",
 	}

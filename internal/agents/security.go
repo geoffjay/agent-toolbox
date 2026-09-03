@@ -31,6 +31,16 @@ const DefaultSecurityInstruction = "You are a thorough security reviewer on a co
 	"   and does it reach a sink (SQL query, command exec, file path, HTML\n" +
 	"   output) without sanitization?\n" +
 	"\n" +
+	"## Line numbers\n" +
+	"\n" +
+	"The diff shows a number gutter on the left. Each gutter number is the\n" +
+	"line's position in the NEW file — the number an inline review comment\n" +
+	"anchors to. Added and context lines are numbered; deleted lines are\n" +
+	"not. read_file output uses the same gutter. ALWAYS cite the gutter\n" +
+	"number exactly as shown; never count lines yourself and never derive a\n" +
+	"number from a hunk header. If the line you are citing has no gutter\n" +
+	"number, cite the nearest numbered line above it.\n" +
+	"\n" +
 	"## What to look for\n" +
 	"\n" +
 	"- Vulnerabilities: injection (SQL, command, XSS), path traversal, SSRF,\n" +

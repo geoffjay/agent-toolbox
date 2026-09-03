@@ -44,6 +44,9 @@ func ReviewersNode(static, security workflow.Node) workflow.Node {
 		ReviewersNodeName,
 		func(ctx agent.Context, reviewRequest string, _ func(*session.Event) error) (map[string]any, error) {
 			targets := reviewerTargetsFor(categoryFromState(ctx), static, security)
+			// runID keys both the sub-scheduler's cache (so revise
+			// rounds re-run the reviewers instead of serving round-1
+			// output from cache) and the isolation scopes.
 			runID := fmt.Sprintf("r%d", revisionCount(ctx)+1)
 
 			results := make([]string, len(targets))
@@ -54,13 +57,22 @@ func ReviewersNode(static, security workflow.Node) workflow.Node {
 				go func(i int, t reviewerTarget) {
 					defer wg.Done()
 					// WithUseSubBranch gives each reviewer its own
-					// branch of the session so parallel LLM turns
-					// don't pollute each other's request contents.
-					// WithRunID scopes this invocation's cache so
-					// revise rounds re-run the reviewers instead of
-					// serving round-1 output from cache.
+					// branch of the session; WithIsolationScope
+					// additionally walls each reviewer's LLM history
+					// off from the sibling's events. Without the scope,
+					// ADK v2.2.0's current-turn pivot scan
+					// (buildContentsCurrentTurnContextOnly) treats a
+					// sibling's events as this agent's turn boundary
+					// and slices the reviewer's own accumulated tool
+					// calls out of its next request — the reviewer then
+					// re-explores from scratch forever (a live run
+					// against a tool-heavy model looped for 53 minutes
+					// on this; fixed upstream in v2.3.0 by a branch
+					// check in the pivot scan).
 					out, err := workflow.RunNode[string](ctx, t.node, reviewRequest,
-						workflow.WithUseSubBranch(), workflow.WithRunID(runID))
+						workflow.WithUseSubBranch(),
+						workflow.WithRunID(runID),
+						workflow.WithIsolationScope(t.name+"@"+runID))
 					results[i] = out
 					errs[i] = err
 				}(i, t)

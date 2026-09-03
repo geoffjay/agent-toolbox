@@ -51,11 +51,39 @@ user-role content matching the invocation's `ctx.UserContent()` text, a
 copy is prepended, restoring the intended request shape
 `[user diff, ...current-turn events...]`.
 
-Tradeoffs:
+## Escalation (2026-09-03): the workaround is insufficient for
+tool-heavy reviewers — per-reviewer isolation scopes
 
-- The hijacked turn still loses the agent's *earlier* tool history for
-  that one request (the pivot slices it off); the diff and the latest
-  round survive, which is enough for the reviewers to continue.
+The callback restores the diff, but it cannot restore what the pivot
+steal also slices off: the reviewer's **own earlier tool calls**. A live
+`claude-opus-5` run (log `run-20260903T220109`) showed the consequence:
+each reviewer made a tool call, the sibling's event stole the pivot, the
+next request lost the reviewer's accumulated tool history, the model
+re-explored from scratch — for 53 minutes, until the user quit. The log
+signature is a sawtooth: `contents=2→4→6→8→10→12→2` resetting over and
+over while `EnsureUserContent` faithfully restores the diff each time.
+
+Fix (still public API, `internal/agents/reviewers.go`): each reviewer's
+`workflow.RunNode` call now also passes
+`workflow.WithIsolationScope(name + "@" + runID)`. The pivot scan skips
+out-of-scope events as turn starts (v2.2.0 `contents_processor.go` line
+537), so sibling events can no longer steal the pivot; scoped single-turn
+agents get their task input rebuilt by `buildTaskInputUserContent`, and
+each reviewer's history is strictly its own. Verified by
+`TestParallelReviewersKeepOwnHistory` (interleaved reviewer tool calls;
+asserts each reviewer's own FunctionCalls/Responses survive in its next
+request) — it fails on the pre-fix wiring and passes with scopes.
+
+Upstream fixed the pivot scan itself in ADK v2.3.0 (`eventBelongsToBranch`
+check in `buildContentsCurrentTurnContextOnly`). When this repo moves to
+v2.3.0+, the scopes are redundant but harmless; `EnsureUserContent` stays
+as a safety net.
+
+Tradeoffs (updated):
+
+- The scopes make each reviewer's events invisible to the other within a
+  round — already true at the branch level; the scope adds history-level
+  isolation, which is what a parallel review wants.
 - If the ADK fixes the pivot (branch check) upstream, the callback
   becomes a no-op (healthy requests already contain the user content) —
   safe to keep.
@@ -64,8 +92,9 @@ Tradeoffs:
 
 - OpenAI-compatible providers receive a well-formed user-first request
   on every turn; the empty-response failure mode disappears.
+- Parallel tool-using reviewers keep their own histories; runs converge
+  regardless of how tool-heavy the model is.
 - Any future graph shape with parallel single-turn agents is covered by
-  the same callback.
-- Watch ADK releases; if `buildContentsCurrentTurnContextOnly` gains the
-  branch filter, this doc should be updated and the callback may be
-  retired.
+  the same callback and should pass its own isolation scope per child.
+- Watch ADK releases; v2.3.0 has the branch filter. On upgrade, this doc
+  should be updated and the scopes may be retired.

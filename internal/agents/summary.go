@@ -50,9 +50,10 @@ const DefaultSummaryInstruction = "You are the summary step of a code review pip
 	"List every distinct finding from the reviewers as a bullet, in severity\n" +
 	"order (blocker, major, minor, nit, praise). Each bullet must include:\n" +
 	"\n" +
-	"- The file:line reference (e.g. `path:line`)\n" +
+	"- The file:line reference copied verbatim from the reviewer finding\n" +
+	"  (e.g. `path:line`). NEVER adjust, recount, or recompute a line\n" +
+	"  number — copy the reviewer's number exactly, even if it looks off.\n" +
 	"- The severity tag: [blocker], [major], [minor], [nit], or [praise]\n" +
-	"- A description of the issue and what to do about it\n" +
 	"\n" +
 	"De-duplicate identical findings. If the two reviewers disagree on\n" +
 	"severity, take the higher one and note the disagreement inline.\n" +

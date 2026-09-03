@@ -41,6 +41,13 @@ in parallel, gathering their output into a map keyed by agent name. The
 findings are then formatted and passed to the summary agent for a final
 report.
 
+The diff is presented to the reviewer agents with each added and context
+line prefixed by its new-file line number, and the `read_file` tool uses
+the same numbering — reviewers are instructed to cite those numbers
+verbatim so the `file:line` references in the report (which anchor the
+inline comments posted with `--post-comments`) match GitHub's line
+coordinates.
+
 ## Repository rules
 
 Repository-specific review rules can be placed in `.review/rules/` as

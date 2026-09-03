@@ -119,3 +119,52 @@
   `j`/`k` were unbound), `patterns/adk-hitl-gates.md`,
   `plans/hitl-gates.md`, `plans/reusable-pipelines.md`, and the README
   flowchart.
+
+* **Decision + fix (line-anchor drift)**: Audited the anchors of the last
+  posted review (graph-review PR 10): 4 of 11 inline comments cited
+  wrong lines (off by −1..+2, both directions). The diff itself is never
+  altered (`GetDiff` is a passthrough; the seed fences it verbatim) —
+  the drift is the models counting hunk headers by hand, and
+  `FilterByDiffLines` can't catch a wrong number that happens to exist
+  in a hunk. Fix: `review.NumberedDiff` renders the seed diff with a
+  new-file line-number gutter (hunk headers replaced by a rule — their
+  `+START,COUNT` is the top confusion source), `read_file` numbers its
+  output with the same gutter, reviewer instructions gained a "Line
+  numbers" section (cite the gutter verbatim, never count), and the
+  summary must copy reviewer numbers verbatim. Cross-invariant test:
+  every shown number is anchorable per `FilterByDiffLines`. E2E smoke:
+  mock Responses-API model driven through the real CLI cites exactly the
+  gutter number. Recorded in `decisions/review-line-anchor-drift.md`;
+  README routing section documents the numbering.
+
+## 2026-09-03
+* **Fix (parallel reviewer non-completion, 53-minute loop)**: A live
+  claude-opus-5 run never completed: the log showed reviewer LLM calls
+  for 53 minutes with a `contents=2→4→…→12→2` sawtooth, then two
+  `context canceled` errors when the user quit. Root cause is the
+  documented ADK v2.2.0 pivot bug escalated: `EnsureUserContent` restored
+  the diff, but the pivot steal also slices the reviewer's own tool
+  history, so a tool-heavy model re-explored from scratch after every
+  sibling event, forever (yesterday's glm run converged only because it
+  used few tools). Fix: each reviewer `RunNode` call now passes
+  `WithIsolationScope(name + "@" + runID)` — out-of-scope events can't
+  be pivots, so sibling events can't reset the turn boundary and each
+  reviewer's history stays its own. Repro:
+  `TestParallelReviewersKeepOwnHistory` (interleaved tool calls via
+  stage barriers; asserts own tool history survives) fails pre-fix,
+  passes post-fix; upstream v2.3.0 fixed the pivot scan itself
+  (branch check) — scopes become redundant but harmless on upgrade.
+  Recorded as an escalation in
+  `decisions/adk-parallel-turn-input.md`. E2E: tool-using mock model
+  driven through the real CLI converges in 2.5s with correct
+  gutter-cited findings.
+* **Fix (cancellation masked as model failure)**: `retry.go` treated
+  `context canceled` as retryable-transient and, when "exhausted",
+  fabricated an empty model response (`transient_error_exhausted`) —
+  a deliberate quit (q / ctrl+c) surfaced as two "transient errors
+  exhausted" warnings and an empty report. Now cancellation and
+  deadline errors are non-transient and propagate: the TUI's existing
+  `errors.Is(workErr, context.Canceled)` swallow in `ui.Run` turns a
+  deliberate interrupt into a clean exit, and a genuinely canceled run
+  reports the interrupt instead of a fake empty review. Test:
+  `TestRetryModelPropagatesCancellation`.

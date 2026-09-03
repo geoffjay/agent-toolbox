@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"errors"
 	"iter"
 	"log/slog"
 	"strings"
@@ -24,8 +25,15 @@ var transientErrors = []string{
 	"unexpected EOF",
 }
 
+// isTransientError reports whether err is worth a retry. Cancellation
+// and deadlines of the CALLER's context are never transient: the run is
+// being torn down (user quit, ctrl+c) and any retry or fake empty
+// response would mask a deliberate interrupt as a model failure.
 func isTransientError(err error) bool {
 	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
@@ -64,6 +72,14 @@ func (r *retryModel) GenerateContent(ctx context.Context, req *model.LLMRequest,
 				}
 			}
 			if lastErr == nil {
+				return
+			}
+			// A cancelled/deadlined context means the run is being torn
+			// down (user quit, ctrl+c): propagate the error so the
+			// pipeline reports the interrupt instead of fabricating an
+			// empty model response that reads as a model failure.
+			if errors.Is(lastErr, context.Canceled) || errors.Is(lastErr, context.DeadlineExceeded) {
+				yield(nil, lastErr)
 				return
 			}
 			slog.Warn("transient model error",

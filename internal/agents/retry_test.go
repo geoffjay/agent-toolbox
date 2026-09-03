@@ -6,6 +6,7 @@ import (
 	"iter"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/genai"
@@ -146,5 +147,52 @@ func (n *nonTransient) GenerateContent(ctx context.Context, req *model.LLMReques
 				return
 			}
 		}
+	}
+}
+
+// cancelledInner yields nothing and returns the context's own error,
+// the shape every provider returns when the run is torn down mid-call.
+type cancelledInner struct{ calls int }
+
+func (c *cancelledInner) Name() string { return "cancelled" }
+
+func (c *cancelledInner) GenerateContent(ctx context.Context, _ *model.LLMRequest, _ bool) iter.Seq2[*model.LLMResponse, error] {
+	return func(yield func(*model.LLMResponse, error) bool) {
+		c.calls++
+		yield(nil, ctx.Err())
+	}
+}
+
+// TestRetryModelPropagatesCancellation guards the deliberate-interrupt
+// path: when the run is torn down (user quit, ctrl+c), the wrapper must
+// return the cancellation error — not retry it, and not fabricate an
+// empty model response that reads downstream as a model failure (a live
+// opus run's quit produced two "transient errors exhausted" warnings
+// for what was a clean interrupt).
+func TestRetryModelPropagatesCancellation(t *testing.T) {
+	inner := &cancelledInner{}
+	m := &retryModel{inner: inner, maxRetries: 3, delay: time.Hour}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var gotErr error
+	var texts []string
+	for resp, err := range m.GenerateContent(ctx, &model.LLMRequest{}, false) {
+		if err != nil {
+			gotErr = err
+			break
+		}
+		for _, p := range resp.Content.Parts {
+			texts = append(texts, p.Text)
+		}
+	}
+	if !errors.Is(gotErr, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled propagated", gotErr)
+	}
+	if inner.calls != 1 {
+		t.Errorf("inner called %d times, want 1 (cancellation is never retried)", inner.calls)
+	}
+	if len(texts) != 0 {
+		t.Errorf("texts = %v, want no fabricated response", texts)
 	}
 }
