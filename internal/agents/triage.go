@@ -7,15 +7,14 @@ import (
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/agent/llmagent"
 	"google.golang.org/adk/v2/model"
-	"google.golang.org/adk/v2/session"
 	"google.golang.org/adk/v2/workflow"
 )
 
 // TriageAgentName is the workflow node and agent name for the triage step.
 const TriageAgentName = "triage"
 
-// Route categories emitted by the triage agent. These map to downstream
-// reviewer nodes via workflow.StringRoute.
+// Route categories the triage agent may classify a diff into. The
+// reviewer orchestrator selects nodes from them.
 const (
 	RouteStatic   = "static"
 	RouteSecurity = "security"
@@ -62,26 +61,43 @@ func NewTriageAgent(m model.LLM, instruction string) (agent.Agent, error) {
 	return agent, nil
 }
 
-// RouteByTriage is an EmittingFunctionNode handler that reads the triage
-// agent's one-word classification and emits a routing event. Unknown or
-// off-script replies fall through to "both" so nothing is skipped.
-//
-// It returns the original user message text so that downstream AgentNode
-// reviewers (which feed on their predecessor's output, not on
-// ctx.UserContent) receive the diff to review.
-func RouteByTriage(ctx agent.Context, input any, emit func(*session.Event) error) (any, error) {
-	category := strings.TrimRight(strings.ToLower(strings.TrimSpace(fmt.Sprint(input))), ".")
+// TriageCategoryStateKey is the session state key holding the normalized
+// triage category. The reviewer orchestrator reads it on every
+// activation — including findings-gate revise rounds, when it is reached
+// again through the gate's loop-back edge — to know which reviewers to
+// run.
+const TriageCategoryStateKey = "triage_category"
+
+// NormalizeTriageCategory maps a triage reply to a routing category.
+// Unknown or off-script replies fall through to "both" so nothing is
+// skipped.
+func NormalizeTriageCategory(reply string) string {
+	category := strings.TrimRight(strings.ToLower(strings.TrimSpace(reply)), ".")
 	switch category {
 	case RouteStatic, RouteSecurity, RouteBoth:
+		return category
 	default:
-		category = RouteBoth
+		return RouteBoth
 	}
-	ev := session.NewEvent(ctx, ctx.InvocationID())
-	ev.Routes = []string{category}
-	if err := emit(ev); err != nil {
-		return nil, err
+}
+
+// TriageCategory reads the triage agent's one-word classification,
+// records it in session state, and returns the original user message
+// text so the downstream reviewer orchestrator (which feeds on its
+// predecessor's output, not on ctx.UserContent) receives the diff to
+// review.
+func TriageCategory(ctx agent.Context, input any) (string, error) {
+	category := NormalizeTriageCategory(fmt.Sprint(input))
+	if err := ctx.State().Set(TriageCategoryStateKey, category); err != nil {
+		return "", fmt.Errorf("record triage category: %w", err)
 	}
 	return userMessageText(ctx), nil
+}
+
+// TriageCategoryNode returns the function node that records the triage
+// category and passes the review request to the reviewers.
+func TriageCategoryNode() workflow.Node {
+	return workflow.NewFunctionNode("route", TriageCategory, workflow.NodeConfig{})
 }
 
 // userMessageText reads the original user text from ctx.UserContent.
@@ -95,10 +111,4 @@ func userMessageText(ctx agent.Context) string {
 		sb.WriteString(p.Text)
 	}
 	return strings.TrimSpace(sb.String())
-}
-
-// TriageRouteNode returns the emitting function node that turns the triage
-// agent output into a workflow route.
-func TriageRouteNode() workflow.Node {
-	return workflow.NewEmittingFunctionNode("route", RouteByTriage, workflow.NodeConfig{})
 }

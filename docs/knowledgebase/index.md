@@ -55,6 +55,9 @@ to touch the KB on every edit.
 * [ADK parallel-turn input workaround](decisions/adk-parallel-turn-input.md) —
   keep the diff in every agent LLM request; ADK's single-turn pivot scan
   ignores branches, so parallel reviewers steal each other's turn boundary.
+* [ADK join-barrier deadlock](decisions/adk-join-barrier-deadlock.md) —
+  conditional routing into a JoinNode deadlocks the fan-in; a dynamic
+  orchestrator node runs only the reviewers triage selected.
 
 ## Patterns
 

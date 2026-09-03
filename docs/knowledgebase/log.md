@@ -90,3 +90,32 @@
   engine agent-agnosticism, neutral HITL vocab, generic-vs-pipeline tools,
   parameterized rules scoping, package layout, neutral shared-layer names)
   so the review pipeline flags structural regressions on this repo.
+
+## 2026-09-02
+* **Decision + fix (join-barrier deadlock)**: A live `review pr` run
+  ended "no report produced" after the security reviewer streamed 18
+  tool calls and real findings — the run triaged to a single reviewer
+  (`security`), and ADK's JoinNode barrier (`gather`, declared
+  predecessors: both reviewers) waited forever on the route-skipped
+  `static_analysis`, so the scheduler drained silently and the summary
+  never ran; the empty report then blocked posting. Replaced the route
+  edges + join with a dynamic orchestrator (`internal/agents/reviewers.go`
+  `ReviewersNode`: reads `TriageCategoryStateKey` from session state,
+  runs the selected reviewers in parallel via `workflow.RunNode` with
+  `WithUseSubBranch` + revision-scoped `WithRunID`); the route node became
+  a plain function node that persists the category. Gate revise edge now
+  loops to the reviewers node (single conditional edge). Recorded in
+  `decisions/adk-join-barrier-deadlock.md`; tests in
+  `internal/graph/graph_route_test.go` (route table + single-reviewer
+  gate revise loop).
+* **TUI fix (text selection + copy key)**: Disabled mouse capture
+  (`MouseModeNone` in `View()`) so native terminal selection works over
+  the whole interface; added a `c` copy key (OSC 52 via
+  `tea.SetClipboard`) copying the raw report markdown when done, else
+  the plain-text stream (parallel unstyled builder); footer updated.
+  Mouse-wheel viewport scrolling is gone; the viewport's default keymap
+  (j/k/u/d/f/b/pgup/pgdn/space) covers scrolling. Updated
+  `plans/tui-presentation.md` (gap closed; also corrected its claim that
+  `j`/`k` were unbound), `patterns/adk-hitl-gates.md`,
+  `plans/hitl-gates.md`, `plans/reusable-pipelines.md`, and the README
+  flowchart.

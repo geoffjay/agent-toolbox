@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -416,5 +417,79 @@ func TestTruncate(t *testing.T) {
 		if got := truncate(tc.in, tc.w); got != tc.want {
 			t.Errorf("truncate(%q, %d) = %q, want %q", tc.in, tc.w, got, tc.want)
 		}
+	}
+}
+
+// TestCopyKey verifies the copy key: with no form open it requests a
+// clipboard write with the right content — the raw markdown once
+// finished, everything streamed before that — and a form open it stays
+// inert so the form keeps the keyboard.
+func TestCopyKey(t *testing.T) {
+	m := sized(newModel())
+	m = drive(m, startMsg{label: "reviewing a diff"})
+	m = drive(m, streamMsg{agent: "triage", text: "looking at the diff"})
+	m = drive(m, streamMsg{agent: "static", text: "static analysis…"})
+	// Copy before finish copies the streamed text, agent-labeled.
+	var out []tea.Msg
+	executeCmd(copyCmdFor(m), &out)
+	if len(out) != 1 {
+		t.Fatalf("copy key produced %d messages, want 1", len(out))
+	}
+	if name := fmt.Sprintf("%T", out[0]); !strings.Contains(name, "setClipboardMsg") {
+		t.Fatalf("copy key produced %T, want a tea setClipboardMsg", out[0])
+	}
+	if s := fmt.Sprint(out[0]); !strings.Contains(s, "looking at the diff") ||
+		!strings.Contains(s, "static analysis…") ||
+		!strings.Contains(s, "--- static ---") {
+		t.Errorf("copied streaming text wrong:\n%q", s)
+	}
+
+	// After finish the raw report markdown is copied instead.
+	tm, renderCmd := m.Update(finishMsg{report: "## Verdict\n\nApprove."})
+	m = tm.(model)
+	if renderCmd == nil {
+		t.Fatal("finish returned no render command")
+	}
+	var out2 []tea.Msg
+	executeCmd(copyCmdFor(m), &out2)
+	if len(out2) != 1 {
+		t.Fatalf("copy after finish produced %d messages, want 1", len(out2))
+	}
+	if s := fmt.Sprint(out2[0]); !strings.Contains(s, "## Verdict") {
+		t.Errorf("copied finished text wrong:\n%q", s)
+	}
+	// With a form open the keystroke belongs to the form.
+	gated := sized(newModel())
+	gated = drive(gated, gateMsg{})
+	gated = drive(gated, press('c'))
+	if gated.form == nil || gated.formKind != formGate {
+		t.Fatal("copy keystroke closed or dismissed the open gate form")
+	}
+}
+
+// copyCmdFor runs the copy key through Update and returns the command it
+// produced.
+func copyCmdFor(m model) tea.Cmd {
+	tm, cmd := m.Update(press('c'))
+	_ = tm.(model)
+	return cmd
+}
+
+// TestViewDoesNotCaptureMouse guards native terminal selection: the view
+// must not enable any mouse-capture mode, which would swallow the
+// terminal's own selection handling.
+func TestViewDoesNotCaptureMouse(t *testing.T) {
+	m := sized(newModel())
+	if v := m.View(); v.MouseMode != tea.MouseModeNone {
+		t.Errorf("View().MouseMode = %v, want MouseModeNone", v.MouseMode)
+	}
+}
+
+// TestFooterMentionsCopyKey guards the footer hint so the copy key stays
+// discoverable.
+func TestFooterMentionsCopyKey(t *testing.T) {
+	m := sized(newModel())
+	if s := m.render(); !strings.Contains(s, "c copy") {
+		t.Errorf("footer missing copy hint:\n%s", s)
 	}
 }

@@ -50,10 +50,10 @@ type model struct {
 	busy     bool   // spinner running
 
 	streaming *strings.Builder // styled streamed agent output (heap: the model is copied)
+	raw       *strings.Builder // plain-text streamed output, for copying (heap: the model is copied)
 	lastAgent string           // agent whose text streamed last
-
-	report   string // final report markdown
-	rendered string // glamour-rendered report
+	report    string           // final report markdown
+	rendered  string           // glamour-rendered report
 
 	warns []string
 	notes []string
@@ -85,6 +85,7 @@ func newModel() model {
 		activity:  "starting",
 		busy:      true,
 		streaming: &strings.Builder{},
+		raw:       &strings.Builder{},
 		fs:        &formState{},
 	}
 }
@@ -108,12 +109,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.BackgroundColorMsg:
 		m.dark = msg.IsDark()
-
 	case tea.KeyPressMsg:
 		if m.form == nil {
 			switch msg.String() {
 			case "q", "ctrl+c":
 				return m, tea.Quit
+			case "c":
+				return m, tea.SetClipboard(m.copyContent())
 			}
 		}
 
@@ -202,9 +204,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() tea.View {
 	v := tea.NewView(m.render())
 	v.AltScreen = true
-	v.MouseMode = tea.MouseModeCellMotion
+	// No mouse capture: leaving the mouse to the terminal keeps native
+	// text selection (and copy) working over the whole interface. The
+	// viewport stays scrollable with the keyboard.
+	v.MouseMode = tea.MouseModeNone
 	v.WindowTitle = "agent-toolbox"
 	return v
+}
+
+// copyContent returns the text to place on the clipboard when the copy
+// key is pressed: the raw report markdown once finished, otherwise
+// everything streamed so far (agent sections and their text, no styling).
+func (m model) copyContent() string {
+	if m.done && strings.TrimSpace(m.report) != "" {
+		return m.report
+	}
+	return m.raw.String()
 }
 
 func (m model) render() string {
@@ -241,7 +256,7 @@ func (m model) render() string {
 		return lipgloss.JoinVertical(lipgloss.Left, header, status, body, m.form.View())
 	}
 
-	help := m.theme.Help.Render("↑/↓ scroll · q quit")
+	help := m.theme.Help.Render("↑/↓ or j/k scroll · c copy · q quit")
 	return lipgloss.JoinVertical(lipgloss.Left, header, status, body, help)
 }
 
@@ -262,16 +277,19 @@ func (m *model) layout() {
 }
 
 // appendStream adds one streamed chunk to the view in light gray, with a
-// separator when the writing agent changes.
+// separator when the writing agent changes. The raw (unstyled) copy is
+// kept alongside so the copy key can put clean text on the clipboard.
 func (m *model) appendStream(agent, text string) {
 	if agent != "" && agent != m.lastAgent {
 		if m.streaming.Len() > 0 {
 			m.streaming.WriteString("\n\n")
 		}
 		m.streaming.WriteString(agentSeparator(m.theme, agent, m.viewport.Width()))
+		m.raw.WriteString("\n\n--- " + agent + " ---\n")
 		m.lastAgent = agent
 	}
 	m.streaming.WriteString(styleLines(m.theme.Stream, text))
+	m.raw.WriteString(text)
 	m.refreshViewport()
 }
 

@@ -17,12 +17,12 @@ marked below for review rather than hidden inside "done".
 ## Background
 
 The CLI printed everything with `fmt` (stdout/stderr) and `slog` (stderr).
-Review executions are multi-stage agent processes (triage → reviewers →
-gather → format → optional findings gate → summary) that may pause for
-human-in-the-loop decisions. Output deserved a real terminal interface:
-a view for content, spinners for long-running stages, streaming agent
-output, forms for HITL, and rendered markdown for the final report
-instead of a raw dump.
+Review executions are multi-stage agent processes (triage → reviewers
+(dynamic fan-out) → format → optional findings gate → summary) that may
+pause for human-in-the-loop decisions. Output deserved a real terminal
+interface: a view for content, spinners for long-running stages,
+streaming agent output, forms for HITL, and rendered markdown for the
+final report instead of a raw dump.
 
 ## Requested requirements → where they landed
 
@@ -92,9 +92,17 @@ instead of a raw dump.
   markdown) is not glamour-rendered in the gate view; the human reads the
   gray streamed reviewer output above the form instead. Rendering the
   payload would duplicate content unless the stream is collapsed.
-- **Scroll keys** — arrows/pgup/pgdn only; vim-style `j`/`k` are not
-  bound. Mouse wheel works (mouse cell-motion enabled), which also means
-  terminal text selection now requires shift.
+- **Text selection restored + copy key** (2026-09-02, closing this gap) —
+  mouse capture (`MouseModeCellMotion`) was removed
+  (`View().MouseMode = tea.MouseModeNone`) so the terminal's native
+  selection works over the whole interface; mouse-wheel scrolling inside
+  the viewport is gone with it, but the full default keymap covers
+  scrolling (`↑/↓`, `j/k`, `u/d`, `f/b`, `pgup/pgdn`, space — verified in
+  `bubbles/v2 viewport/keymap.go`; the earlier note that `j`/`k` were
+  unbound was wrong). A `c` copy key (`tea.SetClipboard`, OSC 52) copies
+  the raw report markdown once finished, otherwise the plain-text
+  stream (kept in a parallel unstyled builder); inert while a form owns
+  the keyboard. Footer: `↑/↓ or j/k scroll · c copy · q quit`.
 - **Activity granularity** — the status line shows the latest event
   (agent name, tool call); it does not show elapsed time, tokens, or a
   stage checklist (triage → reviewers → gate → summary).

@@ -26,14 +26,19 @@ answer.
 
 The gate's decline path emits `ev.Routes = []string{"revise"}` and
 returns the reviewer prompt (original diff + prior findings + feedback —
-reviewers consume predecessor output, see `RouteByTriage`). The graph
-wires `eb.AddRoute(gate, reviewer, StringRoute("revise"))` back to the
-reviewer nodes; the approve path is `workflow.Default`. Cycles are
-legal when every cycle contains at least one conditional edge
+reviewers consume predecessor output; the pre-review `route` node is a
+plain function node that persists the triage category in state and
+returns the original user text, so the loop re-enters the reviewers with
+the same category). The graph wires
+`eb.AddRoute(gate, reviewers, StringRoute("revise"))` back to the
+dynamic reviewers node; the approve path is `workflow.Default`. Cycles
+are legal when every cycle contains at least one conditional edge
 (`workflow.ErrUnconditionalCycle` fires only on all-nil-route cycles).
-Looped nodes start a fresh lifecycle and overwrite `NodeState.Output`;
-`JoinNode` re-evaluates its barrier on every predecessor completion, so
-the revising reviewers re-fire the join and the revised findings re-enter
+The reviewers node is a dynamic orchestrator (see the
+[join-barrier deadlock decision](../decisions/adk-join-barrier-deadlock.md)):
+on re-entry it re-runs exactly the reviewer set triage selected —
+reading the category and the gate's revision counter from session state
+— and returns fresh gathered output, so the revised findings re-enter
 the gate (a second approval round per revision, by construction).
 
 ## Gotchas (all hit for real)

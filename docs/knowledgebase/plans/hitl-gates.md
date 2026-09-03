@@ -55,21 +55,21 @@ Three candidate gates, ordered by value:
 - Decisions: `approve` (forward to summary), `revise` (loop back to the
   reviewer nodes with an enriched prompt payload), `abort` (fail the
   run).
-- **Loop-back is a conditional cycle**: `eb.AddRoute(gate, staticNode,
-  StringRoute("revise"))` (+ security). `workflow.validateCycles`
+- **Loop-back is a conditional cycle**: `eb.AddRoute(gate, reviewersNode,
+  StringRoute("revise"))`. `workflow.validateCycles`
   rejects only unconditional cycles; routed edges make the cycle legal.
   Scheduler re-fires looped nodes with a fresh lifecycle
   (`scheduler.go` `handleCompletion`).
 - The gate's return value is the successor's input: reviewers feed on
-  predecessor output (why `RouteByTriage` returns the original user
+  predecessor output (why the route node returns the original user
   message), so the revise payload is diff + prior findings + human
   feedback.
 - Revision cap enforced by the gate via session state counter (the
   engine bounds only unconditional cycles); force-fail past the cap.
-- `JoinNode` (`gather`) re-evaluates its barrier on every predecessor
-  completion; revising both reviewers re-fires the join with fresh
-  outputs. Routing a revision to a single reviewer re-uses the other's
-  stale output — a deliberate, documented semantic.
+- The reviewers node (since the join-barrier fix, see the
+  [decision doc](../decisions/adk-join-barrier-deadlock.md)) is a
+  dynamic orchestrator: a revise round re-runs exactly the reviewer set
+  triage selected, not both reviewers by construction.
 - CLI (`cmd/review.go` `runPipeline`): the event loop must detect
   `ev.RequestedInput`, print message + payload, prompt for decision +
   feedback, then issue the resume turn. Non-interactive stdin fails

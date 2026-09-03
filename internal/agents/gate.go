@@ -15,8 +15,8 @@ const FindingsGateName = "findings_gate"
 
 // RouteRevise is the routing key the findings gate emits when the human
 // declines the findings and sends them back for revision. The graph wires
-// it as a conditional edge from the gate back to the reviewer nodes, which
-// makes the approve/revise cycle legal (conditional edges only).
+// it as a conditional edge from the gate back to the reviewers node,
+// which makes the approve/revise cycle legal (conditional edges only).
 const RouteRevise = "revise"
 
 // Gate decisions returned by the human.
@@ -44,7 +44,8 @@ const findingsRevisionsStateKey = "findings_gate_revisions"
 //	approve → the findings flow on to the summary agent (default route)
 //	revise  → the gate emits RouteRevise and returns a new reviewer prompt
 //	          (original diff + prior findings + human feedback); the routed
-//	          edges loop back to the reviewer nodes
+//	          edge loops back to the reviewers node, which re-runs the
+//	          reviewer set triage selected
 //	abort   → the run fails with a descriptive error
 //
 // More than MaxFindingsRevisions revisions fail the run. The node runs

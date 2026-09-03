@@ -34,7 +34,7 @@ most to least entangled:
 
 1. **`internal/graph`** — this is *the review graph*, not a graph library.
    `New(ctx, Config)` hardcodes the shape
-   `START → triage → route → {static, security} → gather → format → [gate] → summary`.
+   `START → triage → route → reviewers (dynamic) → format → [gate] → summary`.
    `Config` carries review-agent-specific instruction fields
    (`TriageInstruction`, `StaticInstruction`, `SecurityInstruction`,
    `SummaryInstruction`) and `FindingsGate`.
@@ -45,7 +45,9 @@ most to least entangled:
    - review-specific agents: `triage.go`, `static.go`, `security.go`,
      `summary.go`, their `Default*Instruction` blocks, `StyleInstruction`;
    - review-specific routing + gate: `RouteStatic/Security/Both`,
-     `RouteByTriage`, `FormatFindings`, and the HITL vocabulary in `gate.go`
+     `TriageCategoryStateKey` + `NormalizeTriageCategory`
+     (`triage.go`), `ReviewersNode` (`reviewers.go`), `FormatFindings`,
+     and the HITL vocabulary in `gate.go`
      (`DecisionApprove/Revise/Abort`, `RouteRevise`, `FindingsGate`,
      `RevisePrompt`, `MaxFindingsRevisions`).
 
@@ -177,11 +179,14 @@ else.
   repo tools on demand.
 
 - **Graph** —
-  `START → survey → route → {pattern-conformance, security-requirements, dependency-audit, …} → gather → format → [audit gate] → report → END`.
+  `START → survey → route → analyzers (dynamic fan-out of the selected set) → format → [audit gate] → report → END`.
   `survey` inventories languages / frameworks / entrypoints (an LLM node, or
-  a function node that walks the tree). `route` picks the applicable
-  analyzers. The join / route / gate wiring reuses the `graph` toolkit and
-  `hitl` gate exactly as review does.
+  a function node that walks the tree). `route` records the applicable
+  analyzer set in session state. The dynamic fan-out / route / gate wiring
+  reuses the `graph` toolkit, the `ReviewersNode` pattern, and the
+  `hitl` gate exactly as review does (conditional fan-in through a
+  dynamic node — never a JoinNode behind conditional routing; see the
+  [join-barrier deadlock decision](../decisions/adk-join-barrier-deadlock.md)).
 
 - **Reuses (proves the abstraction)** — model runtime, repo tools
   (`read_file` / `list_files` / `git_log` / `git_blame`), the rules loader

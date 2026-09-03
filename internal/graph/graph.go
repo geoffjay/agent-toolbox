@@ -3,15 +3,23 @@
 //
 // Graph shape:
 //
-//	START → triage (LLM) → route ─┬─ "static" ──┐
-//	                              ├─ "security"─┼─> gather ─> format_findings ─> summary
-//	                              └─ "both" ────┘
+//	START → triage (LLM) → route → reviewers → format_findings → summary
+//
+// The route node records the triage category in session state and passes
+// the review request through unchanged. The reviewers node is a dynamic
+// orchestrator: it reads the recorded category and runs only the
+// reviewer agents triage selected, in parallel, gathering their output
+// into a map keyed by agent name. The JoinNode this replaces deadlocked
+// whenever conditional routing skipped one of its two declared
+// predecessors — a single-reviewer verdict (e.g. "security") left the
+// barrier waiting on a node that never fired.
 //
 // With Config.FindingsGate the tail becomes a conditional cycle:
 //
 //	format_findings → findings_gate ─┬─ (default) → summary
-//	                                └─ (revise) → static + security (loop back;
-//	                                  gather re-fires and the gate runs again)
+//	                                └─ (revise) → reviewers (loop back;
+//	                                  the same reviewer set re-runs and
+//	                                  the gate runs again)
 package graph
 
 import (
@@ -122,7 +130,7 @@ func New(_ context.Context, cfg Config) (agent.Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("build triage node: %w", err)
 	}
-	routeNode := agents.TriageRouteNode()
+	routeNode := agents.TriageCategoryNode()
 	staticNode, err := workflow.NewAgentNode(static, workflow.NodeConfig{})
 	if err != nil {
 		return nil, fmt.Errorf("build static node: %w", err)
@@ -131,44 +139,39 @@ func New(_ context.Context, cfg Config) (agent.Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("build security node: %w", err)
 	}
-	gather := workflow.NewJoinNode("gather")
+	reviewers := agents.ReviewersNode(staticNode, securityNode)
 	format := agents.FormatFindingsNode()
 	summaryNode, err := workflow.NewAgentNode(summary, workflow.NodeConfig{})
 	if err != nil {
 		return nil, fmt.Errorf("build summary node: %w", err)
 	}
 
-	// START → triage → route → {static, security, both}
+	// START → triage → route → reviewers
 	//
-	// MultiRoute lets the "both" category fan out to both reviewers with a
-	// single edge per target, avoiding duplicate (from,to) edges.
+	// The route node is a plain function node: it records the triage
+	// category in session state and returns the original review request
+	// so the reviewers node receives the diff. The reviewers node reads
+	// the category on every activation — first pass and revise rounds —
+	// and runs exactly the reviewer set triage selected, in parallel.
 	eb := workflow.NewEdgeBuilder()
 	eb.Add(workflow.Start, triageNode)
 	eb.Add(triageNode, routeNode)
-	eb.AddRoute(routeNode, staticNode, workflow.MultiRoute[string]{
-		agents.RouteStatic, agents.RouteBoth,
-	})
-	eb.AddRoute(routeNode, securityNode, workflow.MultiRoute[string]{
-		agents.RouteSecurity, agents.RouteBoth,
-	})
+	eb.Add(routeNode, reviewers)
 
-	// reviewer(s) → gather → format → [findings gate] → summary
+	// reviewers → format → [findings gate] → summary
 	//
 	// With the findings gate enabled, format feeds the gate and the
 	// gate's default route continues to summary. A revise decision
-	// emits agents.RouteRevise, whose conditional edges loop back to the
-	// reviewer nodes; the cycle is legal because every path through it
-	// contains a routed edge, and the reviewers re-running re-fires
-	// gather (a join re-evaluates its barrier on each predecessor
-	// completion) so the revised findings re-enter the gate.
-	eb.AddFanIn(gather, staticNode, securityNode)
-	eb.Add(gather, format)
+	// emits agents.RouteRevise, whose conditional edge loops back to
+	// the reviewers node; the cycle is legal because it contains a
+	// routed edge, and the reviewers re-run with the human's revised
+	// prompt so the revised findings re-enter the gate.
+	eb.Add(reviewers, format)
 	if cfg.FindingsGate {
 		gate := agents.FindingsGateNode()
 		eb.Add(format, gate)
 		eb.AddRoute(gate, summaryNode, workflow.Default)
-		eb.AddRoute(gate, staticNode, workflow.StringRoute(agents.RouteRevise))
-		eb.AddRoute(gate, securityNode, workflow.StringRoute(agents.RouteRevise))
+		eb.AddRoute(gate, reviewers, workflow.StringRoute(agents.RouteRevise))
 	} else {
 		eb.Add(format, summaryNode)
 	}
